@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1.0"
+		/>
+		<title>WebSocket Sensor Data</title>
+	</head>
+	<body>
+		<h1>Sensor Data Monitor</h1>
+		<div id="output"></div>
+		<script>
+			const ws = new WebSocket('ws://localhost:3000')
+
+			ws.onopen = () => {
+				console.log('WebSocket connection established')
+			}
+
+			ws.onmessage = message => {
+				const data = JSON.parse(message.data)
+				console.log('Received data:', data)
+				document.getElementById('output').innerText = JSON.stringify(data, null, 2)
+			}
+
+			ws.onclose = () => {
+				console.log('WebSocket connection closed')
+			}
+		</script>
+	</body>
+</html>
