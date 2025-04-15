@@ -12,7 +12,7 @@
 		<h1>Sensor Data Monitor</h1>
 		<div id="output"></div>
 		<script>
-			const ws = new WebSocket('ws://localhost:3000')
+			const ws = new WebSocket('ws://localhost:8002')
 
 			ws.onopen = () => {
 				console.log('WebSocket connection established')
