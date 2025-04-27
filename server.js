@@ -4,7 +4,7 @@ const WebSocket = require('ws')
 const cors = require('cors')
 
 const app = express()
-const PORT = 8001
+const PORT = 8889
 
 // 서보모터
 const Gpio = require('pigpio').Gpio
