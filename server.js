@@ -6,6 +6,10 @@ const cors = require('cors')
 const app = express()
 const PORT = 8001
 
+// 서보모터
+const Gpio = require('pigpio').Gpio
+const servo = new Gpio(18, { mode: Gpio.OUTPUT }) // GPIO 18번
+
 // Body-parser 설정
 app.use(cors())
 app.use(bodyParser.json())
@@ -116,6 +120,15 @@ const startAutoClean = () => {
 	isAutoCleaning = true
 	console.log('자동 청소를 시작합니다.')
 
+	// 서보 모터 동작 예시
+	servo.servoWrite(500)  // 0도
+	setTimeout(() => {
+		servo.servoWrite(2500) // 180도
+	}, 2000)
+	setTimeout(() => {
+		servo.servoWrite(1500) // 중간 (90도)로 복귀
+	}, 4000)
+
 	setTimeout(() => {
 		console.log('자동 청소가 완료되었습니다. 다시 감시를 시작합니다.')
 		detectedPoop = false
@@ -137,6 +150,15 @@ const handleManualClean = ws => {
 	}
 	broadcastSensorData(sensorData)
 	isAutoCleaning = true
+
+	// 서보 모터 동작 (수동 청소)
+	servo.servoWrite(500)  // 0도
+	setTimeout(() => {
+		servo.servoWrite(2500) // 180도
+	}, 2000)
+	setTimeout(() => {
+		servo.servoWrite(1500) // 90도 (중간 복귀)
+	}, 4000)
 
 	// 즉시 수동 청소 실행
 	ws.send(JSON.stringify({ type: 'manualClean' }))
