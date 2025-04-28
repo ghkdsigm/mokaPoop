@@ -30,23 +30,6 @@
 				console.log('WebSocket connection closed')
 			}
 
-			//수동청소
-			const ws = new WebSocket('ws://localhost:8002')
-
-			ws.onopen = () => {
-				console.log('WebSocket connection established')
-			}
-
-			ws.onmessage = message => {
-				const data = JSON.parse(message.data)
-				console.log('Received data:', data)
-				document.getElementById('output').innerText = JSON.stringify(data, null, 2)
-			}
-
-			ws.onclose = () => {
-				console.log('WebSocket connection closed')
-			}
-
 			// 수동 청소 버튼 클릭 이벤트
 			document.getElementById('manualCleanButton').addEventListener('click', () => {
 				console.log('수동 청소 요청 전송')
