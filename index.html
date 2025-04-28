@@ -1,43 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<meta charset="UTF-8" />
-		<meta
-			name="viewport"
-			content="width=device-width, initial-scale=1.0"
-		/>
-		<title>WebSocket Sensor Data</title>
-	</head>
-	<body>
-		<h1>Sensor Data Monitor</h1>
-		<div id="output"></div>
 
-		<button id="manualCleanButton">수동 청소 실행</button> <!-- 버튼 추가 -->
-		<script>
-			const ws = new WebSocket('ws://localhost:8002')
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>WebSocket Sensor Data</title>
+</head>
 
-			ws.onopen = () => {
-				console.log('WebSocket connection established')
-			}
+<body>
+	<h1>Sensor Data Monitor</h1>
+	<div id="output"></div>
 
-			ws.onmessage = message => {
-				const data = JSON.parse(message.data)
-				console.log('Received data:', data)
-				document.getElementById('output').innerText = JSON.stringify(data, null, 2)
-			}
+	<button id="manualCleanButton">수동 청소 실행</button> <!-- 버튼 추가 -->
+	<script>
+		const ws = new WebSocket('ws://192.168.45.111:8002')
 
-			ws.onclose = () => {
-				console.log('WebSocket connection closed')
-			}
+		ws.onopen = () => {
+			console.log('WebSocket connection established')
+		}
 
-			// 수동 청소 버튼 클릭 이벤트
-			document.getElementById('manualCleanButton').addEventListener('click', () => {
-				console.log('수동 청소 요청 전송')
-				ws.send(JSON.stringify({
-					type: 'manualClean',
-					data: { poop: 'y' }
-				}))
-			})
-		</script>
-	</body>
+		ws.onmessage = message => {
+			const data = JSON.parse(message.data)
+			console.log('Received data:', data)
+			document.getElementById('output').innerText = JSON.stringify(data, null, 2)
+		}
+
+		ws.onclose = () => {
+			console.log('WebSocket connection closed')
+		}
+
+		// 수동 청소 버튼 클릭 이벤트
+		document.getElementById('manualCleanButton').addEventListener('click', () => {
+			console.log('수동 청소 요청 전송')
+			ws.send(JSON.stringify({
+				type: 'manualClean',
+				data: { poop: 'y' }
+			}))
+		})
+	</script>
+</body>
+
 </html>
