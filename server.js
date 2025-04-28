@@ -138,20 +138,6 @@ const startAutoClean = () => {
 
 // 수동 청소 함수
 const handleManualClean = ws => {
-	console.log('수동 청소 요청을 처리합니다.')
-	sensorData = {
-		temperature: generateRandomValue(),
-		humidity: generateRandomValue(),
-		pressure: generateRandomValue(),
-		color: detectedPoop ? 'y' : 'n',
-		poop: 'y',
-		type: 'hand',
-		time: new Date().toISOString(),
-	}
-	broadcastSensorData(sensorData)
-	isAutoCleaning = true
-
-	// 서보 모터 동작 (수동 청소)
 	servo.servoWrite(500)  // 0도
 	setTimeout(() => {
 		servo.servoWrite(2500) // 180도
@@ -160,23 +146,48 @@ const handleManualClean = ws => {
 		servo.servoWrite(1500) // 90도 (중간 복귀)
 	}, 4000)
 
-	// 즉시 수동 청소 실행
-	ws.send(JSON.stringify({ type: 'manualClean' }))
-	setTimeout(() => {
-		console.log('수동 청소가 완료되었습니다. 다시 감시를 시작합니다.')
-		sensorData = {
-			temperature: generateRandomValue(),
-			humidity: generateRandomValue(),
-			pressure: generateRandomValue(),
-			color: detectedPoop ? 'y' : 'n',
-			poop: 'y',
-			type: 'handDone',
-			time: new Date().toISOString(),
-		}
-		broadcastSensorData(sensorData)
-		detectedPoop = false
-		isAutoCleaning = false
-	}, 10000) // 10초 동안 수동 청소 진행
+	// console.log('수동 청소 요청을 처리합니다.')
+	// sensorData = {
+	// 	temperature: generateRandomValue(),
+	// 	humidity: generateRandomValue(),
+	// 	pressure: generateRandomValue(),
+	// 	color: detectedPoop ? 'y' : 'n',
+	// 	poop: 'y',
+	// 	type: 'hand',
+	// 	time: new Date().toISOString(),
+	// }
+	// broadcastSensorData(sensorData)
+	// isAutoCleaning = true
+
+	// // 서보 모터 동작 (수동 청소)
+	// servo.servoWrite(500)  // 0도
+	// setTimeout(() => {
+	// 	servo.servoWrite(2500) // 180도
+	// }, 2000)
+	// setTimeout(() => {
+	// 	servo.servoWrite(1500) // 90도 (중간 복귀)
+	// }, 4000)
+
+	// // 즉시 수동 청소 실행
+	// ws.send(JSON.stringify({
+	// 	type: 'manualClean',
+	// 	data: { status: 'started' } // 예시로 수동 청소 시작 알림
+	// }))
+	// setTimeout(() => {
+	// 	console.log('수동 청소가 완료되었습니다. 다시 감시를 시작합니다.')
+	// 	sensorData = {
+	// 		temperature: generateRandomValue(),
+	// 		humidity: generateRandomValue(),
+	// 		pressure: generateRandomValue(),
+	// 		color: detectedPoop ? 'y' : 'n',
+	// 		poop: 'y',
+	// 		type: 'handDone',
+	// 		time: new Date().toISOString(),
+	// 	}
+	// 	broadcastSensorData(sensorData)
+	// 	detectedPoop = false
+	// 	isAutoCleaning = false
+	// }, 10000) // 10초 동안 수동 청소 진행
 }
 
 // 색상 센서 값 감지 함수 (가상 구현)
@@ -207,6 +218,7 @@ wss.on('connection', ws => {
 
 	// WebSocket 메시지 처리
 	ws.on('message', message => {
+		console.log('RAW MESSAGE:', message.toString()) // 🔥추가
 		const receivedData = JSON.parse(message)
 		console.log('Received WebSocket message:', receivedData)
 
