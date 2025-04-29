@@ -58,30 +58,43 @@ const webcamOptions = {
 	height: 480,
 	quality: 100,
 	output: "jpeg",
-	device: false,
+	device: "/dev/video0",      // V4L2로 매핑된 Pi 카메라
 	callbackReturn: "location",
-	verbose: false,
+	verbose: true               // 커맨드 로그를 터미널에 찍어 줍니다
 };
 const Webcam = NodeWebcam.create(webcamOptions);
 
 // 사진 캡처 함수
 const captureImage = () => {
-	Webcam.capture("test", function (err, data) {
+	console.log('▶ NodeWebcam.capture 호출됨');
+	Webcam.capture("test", (err, data) => {
 		if (err) {
-			console.error("웹캠 캡처 에러:", err);
-		} else {
-			console.log("✅ 사진 캡처 완료:", data);
-			// 모든 클라이언트에게 photoTaken 이벤트 전송
-			connectedClients.forEach(client => {
-				if (client.readyState === WebSocket.OPEN) {
-				  client.send(JSON.stringify({
-					type: 'photoTaken',
-					data: { filename: data }  // 예: "test.jpg"
-				  }));
-				}
-			  });
+		  console.error("❌ 웹캠 캡처 에러:", err);
+	
+		  // 클라이언트에 에러 메시지 전송
+		  connectedClients.forEach(client => {
+			if (client.readyState === WebSocket.OPEN) {
+			  client.send(JSON.stringify({
+				type: 'captureError',
+				data: { message: err.message }
+			  }));
+			}
+		  });
+		  return;
 		}
-	});
+	
+		console.log("✅ 사진 캡처 완료:", data);
+	
+		// 클라이언트에 성공 메시지 전송
+		connectedClients.forEach(client => {
+		  if (client.readyState === WebSocket.OPEN) {
+			client.send(JSON.stringify({
+			  type: 'captureSuccess',
+			  data: { filename: data }  // 예: "test.jpg"
+			}));
+		  }
+		});
+	  });
 };
 
 // 가상 센서 데이터 생성 함수

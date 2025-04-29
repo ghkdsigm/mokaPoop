@@ -36,15 +36,15 @@
 				const msg = JSON.parse(message.data);
 
 				if (msg.type === 'sensorUpdate') {
-					console.log('Received data:', msg)
-					document.getElementById('output').innerText = JSON.stringify(msg, null, 2)
+				output.innerText = JSON.stringify(msg.data, null, 2);
 				}
-				else if (msg.type === 'photoTaken') {
-					document.getElementById('status').innerText =
-					`📸 사진 찍힘: ${msg.data.filename}`;
-
-					// 새로 찍힌 사진을 로드 (캐시 방지용 시계열 쿼리스트링)
-					document.getElementById('capturedImage').src =`/${msg.data.filename}?t=${Date.now()}`;
+				else if (msg.type === 'captureError') {
+				status.innerText = `❌ 캡처 에러: ${msg.data.message}`;
+				}
+				else if (msg.type === 'captureSuccess') {
+				status.innerText = `✅ 캡처 완료: ${msg.data.filename}`;
+				// 최신 이미지 표시 (캐시 방지용 timestamp)
+				capturedImage.src = `/${msg.data.filename}?t=${Date.now()}`;
 				}
 
 				//청소진행안내
