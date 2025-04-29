@@ -17,6 +17,8 @@ const servo = new Gpio(18, { mode: Gpio.OUTPUT }); // GPIO 18번
 const app = express();
 const PORT = 8001;
 
+app.use(express.static(path.join(__dirname)));
+
 // Body-parser 설정
 app.use(cors());
 app.use(bodyParser.json());
@@ -68,6 +70,15 @@ const captureImage = () => {
 			console.error("웹캠 캡처 에러:", err);
 		} else {
 			console.log("✅ 사진 캡처 완료:", data);
+			// 모든 클라이언트에게 photoTaken 이벤트 전송
+			connectedClients.forEach(client => {
+				if (client.readyState === WebSocket.OPEN) {
+				  client.send(JSON.stringify({
+					type: 'photoTaken',
+					data: { filename: data }  // 예: "test.jpg"
+				  }));
+				}
+			  });
 		}
 	});
 };
@@ -95,7 +106,7 @@ const generateSensorData = () => {
 	broadcastSensorData(sensorData);
 
 	// 강아지가 올라오면 감시 시작
-	if (sensorData.pressure >= 50 && !isAutoCleaning) {
+	if (sensorData.pressure >= 30 && !isAutoCleaning) {
 		startMonitoring();
 	}
 };
@@ -116,7 +127,7 @@ const startMonitoring = () => {
 	console.log('🧍 강아지가 올라왔습니다. 감시 시작.');
 
 	const monitorInterval = setInterval(() => {
-		if (sensorData.pressure < 40) {
+		if (sensorData.pressure < 29) {
 			console.log('⬇️ 강아지가 내려갔습니다. 사진 촬영 및 AI 분석 시작.');
 
 			clearInterval(monitorInterval);

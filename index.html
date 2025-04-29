@@ -13,6 +13,10 @@
 			<h1>Sensor Data Monitor</h1>
 			<!-- <div id="output"></div> -->
 			<div id="status"></div>
+			
+			<!-- 사진 -->
+			<img id="capturedImage" alt="Captured Photo" style="max-width:100%; margin:10px 0;" />
+
 			<!-- 상태 표시 영역 추가 -->
 			<button id="manualCleanButton">수동 청소 실행</button>
 		</div>
@@ -25,9 +29,23 @@
 			}
 
 			ws.onmessage = message => {
-				const data = JSON.parse(message.data)
-				console.log('Received data:', data)
-				document.getElementById('output').innerText = JSON.stringify(data, null, 2)
+				//const data = JSON.parse(message.data)
+				// console.log('Received data:', data)
+				// document.getElementById('output').innerText = JSON.stringify(data, null, 2)
+
+				const msg = JSON.parse(message.data);
+
+				if (msg.type === 'sensorUpdate') {
+					console.log('Received data:', data)
+					document.getElementById('output').innerText = JSON.stringify(data, null, 2)
+				}
+				else if (msg.type === 'photoTaken') {
+					document.getElementById('status').innerText =
+					`📸 사진 찍힘: ${msg.data.filename}`;
+
+					// 새로 찍힌 사진을 로드 (캐시 방지용 시계열 쿼리스트링)
+					document.getElementById('capturedImage').src =`/${msg.data.filename}?t=${Date.now()}`;
+				}
 
 				//청소진행안내
 				// if (data.type === 'sensorUpdate') {
