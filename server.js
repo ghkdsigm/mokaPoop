@@ -120,8 +120,15 @@ const generateSensorData = () => {
 	broadcastSensorData(sensorData);
 
 	// 강아지가 올라오면 감시 시작
-	if (sensorData.pressure >= 30 && !isAutoCleaning) {
+	if (sensorData.pressure >= 25 && !isAutoCleaning) {
 		startMonitoring();
+	}
+
+
+	//카메라테스트용 테스트후 지워야함
+	if (sensorData.pressure >= 30) {
+		console.log('▶ 테스트용 직접 captureImage() 호출');
+		captureImage();
 	}
 };
 
@@ -141,7 +148,7 @@ const startMonitoring = () => {
 	console.log('🧍 강아지가 올라왔습니다. 감시 시작.');
 
 	const monitorInterval = setInterval(() => {
-		if (sensorData.pressure < 29) {
+		if (sensorData.pressure < 35) {
 			console.log('⬇️ 강아지가 내려갔습니다. 사진 촬영 및 AI 분석 시작.');
 
 			clearInterval(monitorInterval);
