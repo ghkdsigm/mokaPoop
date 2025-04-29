@@ -22,62 +22,33 @@
 		</div>
 
 		<script>
-			const ws = new WebSocket('ws://localhost:8002')
-
-			ws.onopen = () => {
-				console.log('WebSocket connection established')
-			}
-
-			ws.onmessage = message => {
-				//const data = JSON.parse(message.data)
-				// console.log('Received data:', data)
-				// document.getElementById('output').innerText = JSON.stringify(data, null, 2)
-
-				const msg = JSON.parse(message.data);
-
+			window.onload = () => {
+			  const ws = new WebSocket('ws://localhost:8002');
+			  const output = document.getElementById('output');
+			  const status = document.getElementById('status');
+			  const capturedImage = document.getElementById('capturedImage');
+		
+			  ws.onmessage = evt => {
+				const msg = JSON.parse(evt.data);
+		
 				if (msg.type === 'sensorUpdate') {
-				output.innerText = JSON.stringify(msg.data, null, 2);
+				  output.innerText = JSON.stringify(msg.data, null, 2);
 				}
 				else if (msg.type === 'captureError') {
-				status.innerText = `❌ 캡처 에러: ${msg.data.message}`;
+				  status.innerText = `❌ 캡처 에러: ${msg.data.message}`;
 				}
 				else if (msg.type === 'captureSuccess') {
-				status.innerText = `✅ 캡처 완료: ${msg.data.filename}`;
-				// 최신 이미지 표시 (캐시 방지용 timestamp)
-				capturedImage.src = `/${msg.data.filename}?t=${Date.now()}`;
+				  status.innerText = `✅ 캡처 완료: ${msg.data.filename}`;
+				  // 최신 이미지 표시 (캐시 방지용 timestamp)
+				  capturedImage.src = `/${msg.data.filename}?t=${Date.now()}`;
 				}
-
-				//청소진행안내
-				// if (data.type === 'sensorUpdate') {
-				// 	document.getElementById('output').innerText = JSON.stringify(data.data, null, 2)
-				// }
-
-				// if (data.type === 'statusUpdate') {
-				// 	const statusText =
-				// 		data.data.status === 'autoCleanStarted'
-				// 			? '🚿 자동 청소 진행 중...'
-				// 			: data.data.status === 'autoCleanFinished'
-				// 			? '✅ 자동 청소 완료!'
-				// 			: ''
-
-				// 	document.getElementById('status').innerText = statusText
-				// }
-			}
-
-			ws.onclose = () => {
-				console.log('WebSocket connection closed')
-			}
-
-			document.getElementById('manualCleanButton').addEventListener('click', () => {
-				console.log('수동 청소 요청 전송')
-				ws.send(
-					JSON.stringify({
-						type: 'manualClean',
-						data: { poop: 'y' },
-					}),
-				)
-			})
-		</script>
+			  };
+		
+			  document.getElementById('manualCleanButton').onclick = () => {
+				ws.send(JSON.stringify({ type: 'manualClean', data: { poop: 'y' } }));
+			  };
+			};
+		  </script>
 	</body>
 </html>
 <style>
