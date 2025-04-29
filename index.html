@@ -104,7 +104,8 @@
 
           case 'captureSuccess':
             status.innerText = `✅ 캡처 완료: ${msg.data.filename}`;
-            img.src = `/${msg.data.filename}?t=${Date.now()}`;
+            // img.src = `/${msg.data.filename}?t=${Date.now()}`;
+			img.src = `http://192.168.45.111:8001/${msg.data.filename}?t=${Date.now()}`;
             break;
 
           case 'captureError':
