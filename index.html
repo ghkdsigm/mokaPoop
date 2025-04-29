@@ -11,7 +11,7 @@
 	<body>
 		<div class="container">
 			<h1>Sensor Data Monitor</h1>
-			<!-- <div id="output"></div> -->
+			<div id="output"></div>
 			<div id="status"></div>
 			
 			<!-- 사진 -->
@@ -36,8 +36,8 @@
 				const msg = JSON.parse(message.data);
 
 				if (msg.type === 'sensorUpdate') {
-					console.log('Received data:', data)
-					document.getElementById('output').innerText = JSON.stringify(data, null, 2)
+					console.log('Received data:', msg)
+					document.getElementById('output').innerText = JSON.stringify(msg, null, 2)
 				}
 				else if (msg.type === 'photoTaken') {
 					document.getElementById('status').innerText =
