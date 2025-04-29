@@ -1,24 +1,31 @@
-const express = require('express')
-const bodyParser = require('body-parser')
-const WebSocket = require('ws')
-const cors = require('cors')
+const express = require('express');
+const bodyParser = require('body-parser');
+const WebSocket = require('ws');
+const cors = require('cors');
 
-const app = express()
-const PORT = 8001
+// AI
+const tf = require('@tensorflow/tfjs-node');
+const fs = require('fs');
+
+// 웹캠
+const NodeWebcam = require('node-webcam');
 
 // 서보모터
-const Gpio = require('pigpio').Gpio
-const servo = new Gpio(18, { mode: Gpio.OUTPUT }) // GPIO 18번
+const Gpio = require('pigpio').Gpio;
+const servo = new Gpio(18, { mode: Gpio.OUTPUT }); // GPIO 18번
+
+const app = express();
+const PORT = 8001;
 
 // Body-parser 설정
-app.use(cors())
-app.use(bodyParser.json())
+app.use(cors());
+app.use(bodyParser.json());
 
 // HTTP 서버 생성
-const server = require('http').createServer(app)
+const server = require('http').createServer(app);
 
 // WebSocket 서버 생성
-const wss = new WebSocket.Server({ port: 8002 })
+const wss = new WebSocket.Server({ port: 8002 });
 
 // 가상 데이터 저장 객체
 let sensorData = {
@@ -27,118 +34,160 @@ let sensorData = {
 	pressure: 0,
 	poop: 'n',
 	time: '',
+};
+
+let isAutoCleaning = false; // 자동 청소 중 여부
+let detectedPoop = false;   // 배변 감지 여부
+let isMonitoring = false;   // 강아지 올라와 있는지 감시 중 여부
+let model;                  // AI 모델
+let connectedClients = new Set(); // WebSocket 연결 클라이언트 목록
+
+// AI 모델 로드
+async function loadModel() {
+	model = await tf.loadLayersModel('file://tfjs_model/model.json');
+	console.log('✅ AI 모델 로드 완료');
 }
+loadModel();
 
-let isAutoCleaning = false // 자동 청소 상태 플래그
-let detectedPoop = false // 똥 색상 감지 여부
+// 웹캠 설정
+const webcamOptions = {
+	width: 640,
+	height: 480,
+	quality: 100,
+	output: "jpeg",
+	device: false,
+	callbackReturn: "location",
+	verbose: false,
+};
+const Webcam = NodeWebcam.create(webcamOptions);
 
-// WebSocket 클라이언트 목록
-let connectedClients = new Set()
+// 사진 캡처 함수
+const captureImage = () => {
+	Webcam.capture("test", function (err, data) {
+		if (err) {
+			console.error("웹캠 캡처 에러:", err);
+		} else {
+			console.log("✅ 사진 캡처 완료:", data);
+		}
+	});
+};
 
-// 가상 데이터 생성 함수
+// 가상 센서 데이터 생성 함수
 const generateRandomValue = (min = 20, max = 25, outlierChance = 0.25, outlierMin = 50, outlierMax = 70) => {
-	const random = Math.random()
+	const random = Math.random();
 	if (random < outlierChance) {
-		return parseFloat((outlierMin + Math.random() * (outlierMax - outlierMin)).toFixed(2))
+		return parseFloat((outlierMin + Math.random() * (outlierMax - outlierMin)).toFixed(2));
 	}
-	return parseFloat((min + Math.random() * (max - min)).toFixed(2))
-}
+	return parseFloat((min + Math.random() * (max - min)).toFixed(2));
+};
 
-// 가상 데이터 생성 및 WebSocket 브로드캐스트
+// 센서 데이터 갱신
 const generateSensorData = () => {
 	sensorData = {
 		temperature: generateRandomValue(),
 		humidity: generateRandomValue(),
-		pressure: generateRandomValue(),
+		pressure: generateRandomValue(20, 80), // 압력 20~80 범위
 		color: detectedPoop ? 'y' : 'n',
 		time: new Date().toISOString(),
-	}
-	console.log('Generated Sensor Data:', sensorData)
+	};
+	console.log('Generated Sensor Data:', sensorData);
 
-	// WebSocket으로 데이터 전송
-	broadcastSensorData(sensorData)
+	broadcastSensorData(sensorData);
 
-	// 압력 센서 값이나 색상 구분에 따라 감시 시작
-	if (((sensorData.pressure >= 50 && sensorData.pressure <= 80) || detectedPoop) && !isAutoCleaning) {
-		detectedPoop ? startMonitoring('poop') : sensorData.pressure >= 50 ? startMonitoring('press') : null
+	// 강아지가 올라오면 감시 시작
+	if (sensorData.pressure >= 50 && !isAutoCleaning) {
+		startMonitoring();
 	}
-}
+};
 
 // WebSocket으로 데이터 전송
 const broadcastSensorData = data => {
-	if (data.type !== 'hand' || data.type !== 'handDone') {
-		connectedClients.forEach(client => {
-			if (client.readyState === WebSocket.OPEN) {
-				client.send(JSON.stringify({ type: 'sensorUpdate', data }))
-			}
-		})
-	} else {
-		connectedClients.forEach(client => {
-			if (client.readyState === WebSocket.OPEN) {
-				client.send(JSON.stringify({ type: 'handUpdate', data }))
-			}
-		})
-	}
-}
-
-// 감시 시작 함수 (압력 센서나 색상 구분 조건이 충족되었을 때)
-const startMonitoring = info => {
-	if (isAutoCleaning) return
-
-	if (info === 'poop') console.log('대소변이 색상이 감지되었습니다. 자동 청소 여부를 체크합니다.')
-	if (info === 'press') console.log('강아지가 올라와있습니다. 자동 청소 여부를 체크합니다.')
-
-	// 1분 동안 온도와 습도를 체크
-	let monitoringInterval = setInterval(() => {
-		isAutoCleaning = true
-		if (sensorData.temperature >= 50 && sensorData.humidity >= 50 && detectedPoop) {
-			console.log('색상 판독 결과 및 온도와 습도가 기준치를 초과했습니다. 자동 청소를 시작합니다.')
-			sensorData = {
-				temperature: generateRandomValue(),
-				humidity: generateRandomValue(),
-				pressure: generateRandomValue(),
-				color: detectedPoop ? 'y' : 'n',
-				poop: 'y',
-				time: new Date().toISOString(),
-			}
-			broadcastSensorData(sensorData)
-			clearInterval(monitoringInterval)
-			startAutoClean()
+	connectedClients.forEach(client => {
+		if (client.readyState === WebSocket.OPEN) {
+			client.send(JSON.stringify({ type: 'sensorUpdate', data }));
 		}
-	}, 5000) // 5초 간격으로 체크(이걸 대략 1분으로 맞춰야함)
+	});
+};
 
-	// 1분 후 모니터링 종료
-	setTimeout(() => {
-		isAutoCleaning = false
-		clearInterval(monitoringInterval)
-		console.log('1분 동안 온도와 습도를 체크했으나 기준치를 초과하지 않았습니다. 다시 감시를 시작합니다.')
-	}, 10000) //이걸 대략 2분으로 맞춰야함
-}
+// 강아지 올라온 이후 압력 감시 시작
+const startMonitoring = () => {
+	if (isMonitoring) return;
+	isMonitoring = true;
+	console.log('🧍 강아지가 올라왔습니다. 감시 시작.');
 
-// 자동 청소 시작 함수
+	const monitorInterval = setInterval(() => {
+		if (sensorData.pressure < 40) {
+			console.log('⬇️ 강아지가 내려갔습니다. 사진 촬영 및 AI 분석 시작.');
+
+			clearInterval(monitorInterval);
+			isMonitoring = false;
+
+			captureImage();
+			setTimeout(async () => {
+				await detectColor();
+				if (detectedPoop) {
+					console.log('💩 배변 감지됨! 자동 청소 시작.');
+					startAutoClean();
+				} else {
+					console.log('🧹 배변 없음. 청소 안함.');
+				}
+			}, 2500);
+		}
+	}, 3000);
+};
+
+// AI로 똥/오줌 감지
+const detectColor = async () => {
+	if (!model) {
+		console.log('⛔ 모델이 아직 로드되지 않았습니다.');
+		return;
+	}
+
+	try {
+		const imageBuffer = fs.readFileSync('test.jpg');
+		const tensor = tf.node.decodeImage(imageBuffer)
+			.resizeNearestNeighbor([64, 64])
+			.toFloat()
+			.expandDims();
+
+		const prediction = await model.predict(tensor).data();
+		const poopIndex = prediction.indexOf(Math.max(...prediction));
+
+		if (poopIndex === 0) {
+			detectedPoop = true;
+			console.log('💩 똥이 감지되었습니다.');
+		} else if (poopIndex === 1) {
+			detectedPoop = true;
+			console.log('💧 오줌이 감지되었습니다.');
+		} else {
+			detectedPoop = false;
+			console.log('❌ 배변 감지 안됨');
+		}
+	} catch (error) {
+		console.error('❗ 예측 중 에러:', error);
+	}
+};
+
+// 자동 청소 시작
 const startAutoClean = () => {
-	isAutoCleaning = true
-	console.log('자동 청소를 시작합니다.')
+	isAutoCleaning = true;
+	console.log('🧹 자동 청소 시작!');
 
-	// 서보 모터 동작 예시
-	servo.servoWrite(500)  // 0도
-	setTimeout(() => {
-		servo.servoWrite(2500) // 180도
-	}, 2000)
-	setTimeout(() => {
-		servo.servoWrite(1500) // 중간 (90도)로 복귀
-	}, 4000)
+	servo.servoWrite(500);   // 0도
+	setTimeout(() => servo.servoWrite(2500), 2000); // 180도
+	setTimeout(() => servo.servoWrite(1500), 4000); // 90도 복귀
 
 	setTimeout(() => {
-		console.log('자동 청소가 완료되었습니다. 다시 감시를 시작합니다.')
-		detectedPoop = false
-		isAutoCleaning = false
-	}, 10000) // 10초 동안 자동 청소 진행
-}
+		console.log('✅ 자동 청소 완료.');
+		detectedPoop = false;
+		isAutoCleaning = false;
+	}, 10000);
+};
 
-// 수동 청소 함수
+// 수동 청소
 const handleManualClean = ws => {
-	console.log('수동 청소 요청을 처리합니다.')
+	console.log('🖐️ 수동 청소 요청 처리.');
+
 	sensorData = {
 		temperature: generateRandomValue(),
 		humidity: generateRandomValue(),
@@ -147,26 +196,22 @@ const handleManualClean = ws => {
 		poop: 'y',
 		type: 'hand',
 		time: new Date().toISOString(),
-	}
-	broadcastSensorData(sensorData)
-	isAutoCleaning = true
+	};
+	broadcastSensorData(sensorData);
 
-	// 서보 모터 동작 (수동 청소)
-	servo.servoWrite(500)  // 0도
-	setTimeout(() => {
-		servo.servoWrite(2500) // 180도
-	}, 2000)
-	setTimeout(() => {
-		servo.servoWrite(1500) // 90도 (중간 복귀)
-	}, 4000)
+	isAutoCleaning = true;
 
-	// 즉시 수동 청소 실행
+	servo.servoWrite(500);
+	setTimeout(() => servo.servoWrite(2500), 2000);
+	setTimeout(() => servo.servoWrite(1500), 4000);
+
 	ws.send(JSON.stringify({
 		type: 'manualClean',
-		data: { status: 'started' } // 예시로 수동 청소 시작 알림
-	}))
+		data: { status: 'started' }
+	}));
+
 	setTimeout(() => {
-		console.log('수동 청소가 완료되었습니다. 다시 감시를 시작합니다.')
+		console.log('✅ 수동 청소 완료.');
 		sensorData = {
 			temperature: generateRandomValue(),
 			humidity: generateRandomValue(),
@@ -175,64 +220,47 @@ const handleManualClean = ws => {
 			poop: 'y',
 			type: 'handDone',
 			time: new Date().toISOString(),
-		}
-		broadcastSensorData(sensorData)
-		detectedPoop = false
-		isAutoCleaning = false
-	}, 10000) // 10초 동안 수동 청소 진행
-}
+		};
+		broadcastSensorData(sensorData);
+		detectedPoop = false;
+		isAutoCleaning = false;
+	}, 10000);
+};
 
-// 색상 센서 값 감지 함수 (가상 구현)
-const detectColor = () => {
-	// 색상 감지 로직
-	const colorDetected = Math.random() < 0.2 // 20% 확률로 색상 감지
-	if (colorDetected) {
-		detectedPoop = true
-	} else {
-		detectedPoop = false
-	}
-}
-
-// WebSocket 연결 처리
+// WebSocket 처리
 wss.on('connection', ws => {
-	connectedClients.add(ws) // 클라이언트 등록
+	connectedClients.add(ws);
+	console.log('WebSocket 연결됨');
 
-	setInterval(() => {
-		//console.log('isAutoCleaningisAutoCleaningisAutoCleaning', isAutoCleaning)
+	const sensorInterval = setInterval(() => {
 		if (!isAutoCleaning) {
-			//가상 데이터 생성
-			generateSensorData()
-			//색상 감지 기능 주기적으로 실행
-			detectColor()
+			generateSensorData();
 		}
-	}, 5000)
-	console.log('WebSocket 연결이 설정되었습니다.')
+	}, 5000);
 
-	// WebSocket 메시지 처리
 	ws.on('message', message => {
-		console.log('RAW MESSAGE:', message.toString()) // 🔥추가
-		const receivedData = JSON.parse(message)
-		console.log('Received WebSocket message:', receivedData)
+		const receivedData = JSON.parse(message);
+		console.log('WebSocket 수신:', receivedData);
 
 		if (receivedData.type === 'manualClean' && receivedData.data.poop === 'y') {
-			handleManualClean(ws)
+			handleManualClean(ws);
 		}
-	})
+	});
 
-	// WebSocket 연결 종료 처리
 	ws.on('close', () => {
-		connectedClients.delete(ws) // 클라이언트 제거
-		console.log('WebSocket 연결이 종료되었습니다.')
-	})
-})
+		connectedClients.delete(ws);
+		clearInterval(sensorInterval);
+		console.log('WebSocket 연결 종료');
+	});
+});
 
-// API 엔드포인트: 현재 데이터 조회
+// API 엔드포인트
 app.get('/api/sensor', (req, res) => {
-	res.status(200).json(sensorData)
-})
+	res.status(200).json(sensorData);
+});
 
-// 서버 실행
+// 서버 시작
 server.listen(PORT, () => {
-	console.log(`Server is running on http://localhost:${PORT}`)
-	console.log(`WebSocket server is running on ws://localhost:8002`)
-})
+	console.log(`Server running at http://localhost:${PORT}`);
+	console.log(`WebSocket running at ws://localhost:8002`);
+});
