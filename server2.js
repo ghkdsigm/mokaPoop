@@ -103,15 +103,36 @@ const checkTemperatureAndHumidity = () => {
 // 자동 청소 함수
 const startAutoClean = () => {
 	isAutoCleaning = true
-	sendMessageToClients('cleaningStart', { time: new Date().toISOString() })
-	console.log('자동 청소 진행 중...')
+	console.log('자동 청소를 시작합니다.')
+
+	// ★ 자동 청소 시작 알림 보내기
+	broadcastStatus('autoCleanStarted')
+
+	// 서보 모터 동작
+	servo.servoWrite(500) // 0도
+	setTimeout(() => {
+		servo.servoWrite(2500) // 180도
+	}, 2000)
+	setTimeout(() => {
+		servo.servoWrite(1500) // 90도 복귀
+	}, 4000)
 
 	setTimeout(() => {
+		console.log('자동 청소가 완료되었습니다. 다시 감시를 시작합니다.')
+		detectedPoop = false
 		isAutoCleaning = false
-		sendMessageToClients('cleaningComplete', { time: new Date().toISOString() })
-		console.log('자동 청소 완료')
-		startMonitoring()
-	}, 10000) // 10초 동안 청소 진행
+
+		// ★ 자동 청소 완료 알림 보내기
+		broadcastStatus('autoCleanFinished')
+	}, 10000) // 10초 동안 청소
+}
+
+const broadcastStatus = status => {
+	connectedClients.forEach(client => {
+		if (client.readyState === WebSocket.OPEN) {
+			client.send(JSON.stringify({ type: 'statusUpdate', data: { status } }))
+		}
+	})
 }
 
 // WebSocket 메시지 처리

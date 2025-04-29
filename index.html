@@ -9,10 +9,14 @@
 		<title>WebSocket Sensor Data</title>
 	</head>
 	<body>
-		<h1>Sensor Data Monitor</h1>
-		<div id="output"></div>
+		<div class="container">
+			<h1>Sensor Data Monitor</h1>
+			<!-- <div id="output"></div> -->
+			<div id="status"></div>
+			<!-- 상태 표시 영역 추가 -->
+			<button id="manualCleanButton">수동 청소 실행</button>
+		</div>
 
-		<button id="manualCleanButton">수동 청소 실행</button> <!-- 버튼 추가 -->
 		<script>
 			const ws = new WebSocket('ws://localhost:8002')
 
@@ -24,20 +28,76 @@
 				const data = JSON.parse(message.data)
 				console.log('Received data:', data)
 				document.getElementById('output').innerText = JSON.stringify(data, null, 2)
+
+				//청소진행안내
+				// if (data.type === 'sensorUpdate') {
+				// 	document.getElementById('output').innerText = JSON.stringify(data.data, null, 2)
+				// }
+
+				// if (data.type === 'statusUpdate') {
+				// 	const statusText =
+				// 		data.data.status === 'autoCleanStarted'
+				// 			? '🚿 자동 청소 진행 중...'
+				// 			: data.data.status === 'autoCleanFinished'
+				// 			? '✅ 자동 청소 완료!'
+				// 			: ''
+
+				// 	document.getElementById('status').innerText = statusText
+				// }
 			}
 
 			ws.onclose = () => {
 				console.log('WebSocket connection closed')
 			}
 
-			// 수동 청소 버튼 클릭 이벤트
 			document.getElementById('manualCleanButton').addEventListener('click', () => {
 				console.log('수동 청소 요청 전송')
-				ws.send(JSON.stringify({
-					type: 'manualClean',
-					data: { poop: 'y' }
-				}))
+				ws.send(
+					JSON.stringify({
+						type: 'manualClean',
+						data: { poop: 'y' },
+					}),
+				)
 			})
 		</script>
 	</body>
 </html>
+<style>
+	.container {
+		width: 90%;
+		max-width: 600px;
+		margin: 40px auto; /* 화면 가운데로 */
+		text-align: left; /* 안에 텍스트는 왼쪽 정렬 */
+	}
+
+	h1 {
+		font-size: 2.5rem;
+		color: #333;
+		font-weight: bold;
+		margin-bottom: 20px;
+	}
+
+	#output {
+		white-space: pre-wrap;
+		font-family: monospace;
+		background-color: #f4f4f4;
+		padding: 20px;
+		border-radius: 10px;
+		margin-bottom: 20px;
+	}
+
+	#manualCleanButton {
+		background-color: #4caf50;
+		color: white;
+		padding: 10px 20px;
+		border: none;
+		border-radius: 5px;
+		font-size: 16px;
+		cursor: pointer;
+		transition: background-color 0.3s ease;
+	}
+
+	#manualCleanButton:hover {
+		background-color: #45a049;
+	}
+</style>
