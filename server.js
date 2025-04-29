@@ -20,6 +20,9 @@ const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ port: 8002 });
 const connectedClients = new Set();
 
+// 학습모델 파일 서빙
+app.use('/tfjs_model', express.static(path.join(__dirname, 'tfjs_model')));
+
 // 정적 파일 서빙
 app.use(express.static(path.join(__dirname)));
 app.use(cors());
@@ -53,7 +56,7 @@ const Webcam = NodeWebcam.create({
 // 모델 로딩
 async function loadModel() {
   try {
-    model = await tf.loadLayersModel('file://tfjs_model/model.json');
+    model = await tf.loadLayersModel('http://localhost:8001/tfjs_model/model.json');
     console.log('✅ 모델 로딩 완료');
   } catch (err) {
     console.error('❗ 모델 로딩 실패:', err.message);
