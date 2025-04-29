@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1.0"
+		/>
+		<title>WebSocket Sensor Data</title>
+	</head>
+	<body>
+		<div class="container">
+			<h1>Sensor Data Monitor</h1>
+			<div id="output"></div>
+			<div id="status"></div>
+			
+			<!-- 사진 -->
+			<img id="capturedImage" alt="Captured Photo" style="max-width:100%; margin:10px 0;" />
+
+			<!-- 상태 표시 영역 추가 -->
+			<button id="manualCleanButton">수동 청소 실행</button>
+		</div>
+
+		<script>
+			window.onload = () => {
+			  const ws = new WebSocket('ws://localhost:8002');
+			  const output = document.getElementById('output');
+			  const status = document.getElementById('status');
+			  const capturedImage = document.getElementById('capturedImage');
+		
+			  ws.onmessage = evt => {
+				const msg = JSON.parse(evt.data);
+		
+				if (msg.type === 'sensorUpdate') {
+				  output.innerText = JSON.stringify(msg.data, null, 2);
+				}
+				else if (msg.type === 'captureError') {
+				  status.innerText = `❌ 캡처 에러: ${msg.data.message}`;
+				}
+				else if (msg.type === 'captureSuccess') {
+				  status.innerText = `✅ 캡처 완료: ${msg.data.filename}`;
+				  // 최신 이미지 표시 (캐시 방지용 timestamp)
+				  capturedImage.src = `/${msg.data.filename}?t=${Date.now()}`;
+				}
+			  };
+		
+			  document.getElementById('manualCleanButton').onclick = () => {
+				ws.send(JSON.stringify({ type: 'manualClean', data: { poop: 'y' } }));
+			  };
+			};
+		  </script>
+	</body>
+</html>
+<style>
+	.container {
+		width: 90%;
+		max-width: 600px;
+		margin: 40px auto; /* 화면 가운데로 */
+		text-align: left; /* 안에 텍스트는 왼쪽 정렬 */
+	}
+
+	h1 {
+		font-size: 2.5rem;
+		color: #333;
+		font-weight: bold;
+		margin-bottom: 20px;
+	}
+
+	#output {
+		white-space: pre-wrap;
+		font-family: monospace;
+		background-color: #f4f4f4;
+		padding: 20px;
+		border-radius: 10px;
+		margin-bottom: 20px;
+	}
+
+	#manualCleanButton {
+		background-color: #4caf50;
+		color: white;
+		padding: 10px 20px;
+		border: none;
+		border-radius: 5px;
+		font-size: 16px;
+		cursor: pointer;
+		transition: background-color 0.3s ease;
+	}
+
+	#manualCleanButton:hover {
+		background-color: #45a049;
+	}
+</style>
