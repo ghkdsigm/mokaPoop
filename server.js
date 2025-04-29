@@ -6,7 +6,7 @@ const WebSocket = require('ws');
 const cors = require('cors');
 const fs = require('fs');
 const tf = require('@tensorflow/tfjs');
-const Jimp = require('jimp');
+const { Jimp } = require('jimp');
 const NodeWebcam = require('node-webcam');
 const { Gpio } = require('pigpio');
 
