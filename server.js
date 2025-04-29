@@ -94,18 +94,36 @@ function broadcast(type, data) {
 
 // 사진 촬영
 function captureImage(callback) {
-  console.log('📸 사진 촬영 시도');
-  Webcam.capture('test', (err, data) => {
-    if (err) {
-      console.error('❗ 웹캠 캡처 실패:', err.message);
-      broadcast('captureError', { message: err.message });
-      return callback(err);
-    }
-    console.log('✅ 사진 촬영 완료');
-    broadcast('captureSuccess', { filename: path.basename(data) });
-    callback(null, path.join(__dirname, 'test.jpg'));
-  });
-}
+	console.log('📸 사진 촬영 시도');
+  
+	// 1. 먼저 기존 사진 파일 삭제 시도
+	const files = fs.readdirSync(__dirname);
+	files.forEach(file => {
+	  if (file.startsWith('photo_') && file.endsWith('.jpg')) {
+		try {
+		  fs.unlinkSync(path.join(__dirname, file));
+		  console.log('🗑️ 삭제 완료:', file);
+		} catch (err) {
+		  console.error('❗ 파일 삭제 실패:', err.message);
+		}
+	  }
+	});
+  
+	// 2. 새 파일 이름 생성
+	const filename = `photo_${Date.now()}`;
+	
+	// 3. 새 사진 촬영
+	Webcam.capture(filename, (err, data) => {
+	  if (err) {
+		console.error('❗ 웹캠 캡처 실패:', err.message);
+		broadcastWS('captureError', { message: err.message });
+		return callback(err);
+	  }
+	  console.log('✅ 사진 촬영 완료:', data);
+	  broadcastWS('captureSuccess', { filename: path.basename(data) });
+	  callback(null, path.join(__dirname, `${filename}.jpg`));
+	});
+  }
 
 // 모니터링 시작
 function startMonitoring() {
