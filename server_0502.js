@@ -5,7 +5,8 @@ const bodyParser = require('body-parser');
 const WebSocket = require('ws');
 const cors = require('cors');
 const fs = require('fs');
-const tf = require('@tensorflow/tfjs-node');
+const tf = require('@tensorflow/tfjs');
+const Jimp = require('jimp');
 const NodeWebcam = require('node-webcam');
 const { Gpio } = require('pigpio');
 
@@ -26,13 +27,15 @@ const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ port: 8002 });
 const connectedClients = new Set();
 
-// 정적 파일 서빙
+// 학습모델 파일 서빙
 app.use('/tfjs_model', express.static(path.join(__dirname, 'tfjs_model')));
+
+// 정적 파일 서빙
 app.use(express.static(path.join(__dirname)));
 app.use(cors());
 app.use(bodyParser.json());
 
-// 센서 데이터 구조
+// 센서 데이터 구조 변경 (pressure → access)
 let sensorData = {
   temperature: 0,
   humidity: 0,
@@ -60,7 +63,7 @@ const Webcam = NodeWebcam.create({
 // 모델 로딩
 async function loadModel() {
   try {
-	model = await tf.loadLayersModel('http://localhost:8001/tfjs_model/model.json');
+    model = await tf.loadLayersModel('http://localhost:8001/tfjs_model/model.json');
     console.log('✅ 모델 로딩 완료');
   } catch (err) {
     console.error('❗ 모델 로딩 실패:', err.message);
@@ -108,31 +111,32 @@ function captureImage(callback) {
 }
 
 // 이미지 AI 분석
-async function detectImage(imagePath) {
+async function detectColor(imagePath) {
   if (!model) {
     console.error('❗ 모델이 아직 로딩되지 않음');
     return;
   }
 
   try {
-    const imageBuffer = fs.readFileSync(imagePath);
-    const tensor = tf.node
-      .decodeImage(imageBuffer, 3)
-      .resizeBilinear([224, 224])
-      .toFloat()
-      .div(255.0)
-      .expandDims(0);
+    const img = await Jimp.read(imagePath);
+    img.resize(64, 64);
 
+    const pixels = [];
+    img.scan(0, 0, img.bitmap.width, img.bitmap.height, (x, y, idx) => {
+      pixels.push(img.bitmap.data[idx]);     // R
+      pixels.push(img.bitmap.data[idx + 1]); // G
+      pixels.push(img.bitmap.data[idx + 2]); // B
+    });
+
+    const tensor = tf.tensor4d(pixels, [1, 64, 64, 3]);
     const prediction = await model.predict(tensor).data();
-    const [poopProb, urineProb, noneProb] = prediction;
-    const maxProb = Math.max(...prediction);
-    const maxIdx = prediction.indexOf(maxProb);
+    const maxIdx = prediction.indexOf(Math.max(...prediction));
 
-    detectedPoop = (maxProb > 0.9 && maxIdx !== 2);
-    console.log(detectedPoop ? `🧪 확신있는 배변 감지 (poop:${poopProb.toFixed(2)} / urine:${urineProb.toFixed(2)})` : '❌ 배변 감지 실패');
+    detectedPoop = (maxIdx === 0 || maxIdx === 1);
+    console.log(detectedPoop ? '🧪 배변 감지 완료' : '❌ 배변 감지 실패');
 
   } catch (e) {
-    console.error('❗ detectImage 에러:', e.message);
+    console.error('❗ detectColor 에러:', e.message);
   }
 }
 
@@ -163,9 +167,9 @@ function handleManualClean() {
   }, 10000);
 }
 
-// IR 센서 감지 처리
+// IR 센서 감지 처리 (접근/이탈 감지)
 IR.on('alert', (level, tick) => {
-  const isAccessed = level === 1;
+  const isAccessed = level === 1; //물체감지(강쥐접근)
   sensorData.access = isAccessed;
   sensorData.time = new Date().toISOString();
   broadcast('sensorUpdate', sensorData);
@@ -176,7 +180,7 @@ IR.on('alert', (level, tick) => {
 
     captureImage(async (err, imagePath) => {
       if (!err) {
-        await detectImage(imagePath);
+        await detectColor(imagePath);
         if (detectedPoop) {
           console.log('💩 배변 감지됨');
           startAutoClean();

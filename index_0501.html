@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WebSocket IR Sensor & Camera Monitor</title>
+  <title>WebSocket Sensor & Camera Monitor</title>
   <style>
     .container {
       width: 90%;
@@ -67,7 +67,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>IR Sensor & Camera Monitor</h1>
+    <h1>Sensor & Camera Monitor</h1>
     <div id="output">Waiting for sensor data...</div>
     <div id="status">Status: Idle</div>
     <img id="capturedImage" alt="Captured Photo" src="" />
@@ -87,7 +87,7 @@
       const captureBtn = document.getElementById('captureTestButton');
 
       ws.onopen = () => {
-        status.innerText = '✅ WebSocket 연결됨';
+        status.innerText = 'Status: WebSocket connected';
       };
 
       ws.onmessage = evt => {
@@ -96,43 +96,44 @@
         switch (msg.type) {
           case 'sensorUpdate':
             output.innerText = JSON.stringify(msg.data, null, 2);
-            status.innerText = msg.data.access
-              ? '🟢 상태: IR 감지 - 강아지 접근 중'
-              : '⚪ 상태: IR 미감지 - 강아지 없음';
-            break;
-
-          case 'captureSuccess':
-            status.innerText = `✅ 캡처 완료: ${msg.data.filename}`;
-			// img.src = `/${msg.data.filename}?t=${Date.now()}`; //라즈베리파이 내에서 사용하려면 이걸로 다시 변경
-            img.src = `http://192.168.45.111:8001/${msg.data.filename}?t=${Date.now()}`; //프론트 외부용
             break;
 
           case 'captureError':
             status.innerText = `❌ 캡처 에러: ${msg.data.message}`;
             break;
 
+          case 'captureSuccess':
+            status.innerText = `✅ 캡처 완료: ${msg.data.filename}`;
+            // img.src = `/${msg.data.filename}?t=${Date.now()}`;
+			img.src = `http://192.168.45.111:8001/${msg.data.filename}?t=${Date.now()}`;
+            break;
+
+          case 'captureError':
+            status.innerText = `❌ Capture Error: ${msg.data.message}`;
+            break;
+
           default:
-            console.warn('❗ 알 수 없는 메시지 타입:', msg.type);
+            console.warn('Unknown message type:', msg.type);
         }
       };
 
       ws.onclose = () => {
-        status.innerText = '❌ WebSocket 연결 종료';
+        status.innerText = 'Status: WebSocket disconnected';
       };
 
       cleanBtn.onclick = () => {
         ws.send(JSON.stringify({ type: 'manualClean', data: { poop: 'y' } }));
-        status.innerText = '▶ 수동 청소 요청 전송됨';
+        status.innerText = '▶ 수동 청소 요청 전송';
       };
 
       captureBtn.onclick = () => {
         fetch('/capture')
           .then(res => res.text())
           .then(() => {
-            status.innerText = '▶ 수동 캡처 요청 전송됨';
+            status.innerText = '▶ 수동 캡처 요청 전송';
           })
           .catch(err => {
-            status.innerText = `❌ 수동 캡처 요청 실패: ${err.message}`;
+            status.innerText = `❌ 캡처 요청 에러: ${err.message}`;
           });
       };
     };
