@@ -124,11 +124,11 @@ async function detectImage(imagePath) {
     const rawImageData = jpeg.decode(jpegData, { useTArray: true });
 
     const imageTensor = tf.tensor3d(rawImageData.data, [rawImageData.height, rawImageData.width, 4], 'int32')
-      .slice([0, 0, 0], [-1, -1, 3]) // RGBA → RGB
-      .resizeBilinear([224, 224])
+      .slice([0, 0, 0], [-1, -1, 3])        // RGBA → RGB
+      .resizeBilinear([64, 64])            // ✅ 모델 입력 크기와 일치
       .toFloat()
       .div(255.0)
-      .expandDims(0);
+      .expandDims(0);                      // [1, 64, 64, 3]
 
     const prediction = await model.predict(imageTensor).data();
     const [poopProb, urineProb, noneProb] = prediction;
