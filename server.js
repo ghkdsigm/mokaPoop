@@ -5,7 +5,8 @@ const bodyParser = require('body-parser');
 const WebSocket = require('ws');
 const cors = require('cors');
 const fs = require('fs');
-const tf = require('@tensorflow/tfjs-node');
+const tf = require('@tensorflow/tfjs');
+const jpeg = require('jpeg-js');
 const NodeWebcam = require('node-webcam');
 const { Gpio } = require('pigpio');
 
@@ -42,9 +43,13 @@ let sensorData = {
 };
 
 let isAutoCleaning = false;
+let isCleaningPaused = false;
+let resumeCleaning = false;
 let detectedPoop = false;
 let isMonitoring = false;
 let model;
+let currentCleaningType = ''; // 'auto' or 'manual'
+let cleaningTimeouts = [];
 
 // NodeWebcam 설정
 const Webcam = NodeWebcam.create({
@@ -60,7 +65,7 @@ const Webcam = NodeWebcam.create({
 // 모델 로딩
 async function loadModel() {
   try {
-	model = await tf.loadLayersModel('http://localhost:8001/tfjs_model/model.json');
+    model = await tf.loadLayersModel('http://localhost:8001/tfjs_model/model.json');
     console.log('✅ 모델 로딩 완료');
   } catch (err) {
     console.error('❗ 모델 로딩 실패:', err.message);
@@ -115,52 +120,83 @@ async function detectImage(imagePath) {
   }
 
   try {
-    const imageBuffer = fs.readFileSync(imagePath);
-    const tensor = tf.node
-      .decodeImage(imageBuffer, 3)
+    const jpegData = fs.readFileSync(imagePath);
+    const rawImageData = jpeg.decode(jpegData, { useTArray: true });
+
+    const imageTensor = tf.tensor3d(rawImageData.data, [rawImageData.height, rawImageData.width, 4], 'int32')
+      .slice([0, 0, 0], [-1, -1, 3]) // RGBA → RGB
       .resizeBilinear([224, 224])
       .toFloat()
       .div(255.0)
       .expandDims(0);
 
-    const prediction = await model.predict(tensor).data();
+    const prediction = await model.predict(imageTensor).data();
     const [poopProb, urineProb, noneProb] = prediction;
     const maxProb = Math.max(...prediction);
     const maxIdx = prediction.indexOf(maxProb);
 
     detectedPoop = (maxProb > 0.9 && maxIdx !== 2);
-    console.log(detectedPoop ? `🧪 확신있는 배변 감지 (poop:${poopProb.toFixed(2)} / urine:${urineProb.toFixed(2)})` : '❌ 배변 감지 실패');
-
+    console.log(
+      detectedPoop
+        ? `🧪 확신있는 배변 감지 (poop:${poopProb.toFixed(2)} / urine:${urineProb.toFixed(2)})`
+        : '❌ 배변 감지 실패'
+    );
   } catch (e) {
     console.error('❗ detectImage 에러:', e.message);
   }
 }
 
+// 청소 시퀀스
+function runCleaningSequence(type = 'auto') {
+  currentCleaningType = type;
+  isAutoCleaning = true;
+  isCleaningPaused = false;
+  resumeCleaning = false;
+
+  cleaningTimeouts = [
+    setTimeout(() => servo.servoWrite(500), 0),
+    setTimeout(() => servo.servoWrite(2500), 2000),
+    setTimeout(() => servo.servoWrite(1500), 4000),
+    setTimeout(() => {
+      if (!isCleaningPaused) {
+        console.log(`✅ ${type === 'auto' ? '자동' : '수동'} 청소 완료`);
+        if (type === 'auto') detectedPoop = false;
+        isAutoCleaning = false;
+        currentCleaningType = '';
+      } else {
+        console.log(`🕒 ${type === 'auto' ? '자동' : '수동'} 청소 중단됨, 재개 대기중`);
+        resumeCleaning = true;
+      }
+    }, 10000)
+  ];
+}
+
+// 청소 일시정지
+function pauseCleaning() {
+  console.log('⏸️ 강아지 감지됨, 청소 일시정지');
+  isCleaningPaused = true;
+  cleaningTimeouts.forEach(clearTimeout);
+  servo.servoWrite(1500); // 정지
+}
+
+// 청소 재개
+function resumeCleaningSequence() {
+  console.log('▶️ 청소 재개');
+  isCleaningPaused = false;
+  resumeCleaning = false;
+  runCleaningSequence(currentCleaningType);
+}
+
 // 자동 청소
 function startAutoClean() {
-  isAutoCleaning = true;
-  servo.servoWrite(500);
-  setTimeout(() => servo.servoWrite(2500), 2000);
-  setTimeout(() => servo.servoWrite(1500), 4000);
-
-  setTimeout(() => {
-    console.log('✅ 자동 청소 완료');
-    detectedPoop = false;
-    isAutoCleaning = false;
-  }, 10000);
+  if (isAutoCleaning) return;
+  runCleaningSequence('auto');
 }
 
 // 수동 청소
 function handleManualClean() {
-  isAutoCleaning = true;
-  servo.servoWrite(500);
-  setTimeout(() => servo.servoWrite(2500), 2000);
-  setTimeout(() => servo.servoWrite(1500), 4000);
-
-  setTimeout(() => {
-    console.log('✅ 수동 청소 완료');
-    isAutoCleaning = false;
-  }, 10000);
+  if (isAutoCleaning) return;
+  runCleaningSequence('manual');
 }
 
 // IR 센서 감지 처리
@@ -170,6 +206,17 @@ IR.on('alert', (level, tick) => {
   sensorData.time = new Date().toISOString();
   broadcast('sensorUpdate', sensorData);
 
+  // 강아지 올라옴 → 감지되면 청소 멈춤
+  if (isAccessed && isAutoCleaning && !isCleaningPaused) {
+    pauseCleaning();
+  }
+
+  // 강아지 내려감 → 재개 조건되면 청소 재개
+  if (!isAccessed && isCleaningPaused && resumeCleaning) {
+    resumeCleaningSequence();
+  }
+
+  // 이탈 → 감시 중이면 AI 감지 시작
   if (!isAccessed && !isAutoCleaning && isMonitoring) {
     isMonitoring = false;
     console.log('⬇️ 이탈 감지, 캡처 시작');
@@ -187,6 +234,7 @@ IR.on('alert', (level, tick) => {
     });
   }
 
+  // 처음 올라올 때 감시 시작
   if (isAccessed && !isMonitoring) {
     isMonitoring = true;
     console.log('🧍 감시 시작');
@@ -220,7 +268,6 @@ app.get('/api/sensor', (req, res) => {
   res.json(sensorData);
 });
 
-// 수동 캡처 API
 app.get('/capture', (req, res) => {
   captureImage(() => {
     res.send('✅ 수동 캡처 완료');
