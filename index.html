@@ -126,7 +126,7 @@
       };
 
       captureBtn.onclick = () => {
-        fetch('/capture')
+        fetch('http://192.168.45.111:8001/capture')
           .then(res => res.text())
           .then(() => {
             status.innerText = '▶ 수동 캡처 요청 전송됨';

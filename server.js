@@ -201,18 +201,24 @@ function handleManualClean() {
 
 // IR 센서 감지 처리
 IR.on('alert', (level, tick) => {
+  console.log('📡 IR 센서 alert 감지됨 → level:', level, 'tick:', tick);
   const isAccessed = level === 1;
   sensorData.access = isAccessed;
   sensorData.time = new Date().toISOString();
+
+  console.log('📝 현재 sensorData:', sensorData);
+
   broadcast('sensorUpdate', sensorData);
 
   // 강아지 올라옴 → 감지되면 청소 멈춤
   if (isAccessed && isAutoCleaning && !isCleaningPaused) {
+    console.log('⛔ IR 감지 → 청소 일시정지');
     pauseCleaning();
   }
 
   // 강아지 내려감 → 재개 조건되면 청소 재개
   if (!isAccessed && isCleaningPaused && resumeCleaning) {
+    console.log('▶ IR 미감지 → 청소 재개');
     resumeCleaningSequence();
   }
 
@@ -225,7 +231,7 @@ IR.on('alert', (level, tick) => {
       if (!err) {
         await detectImage(imagePath);
         if (detectedPoop) {
-          console.log('💩 배변 감지됨');
+          console.log('💩 배변 감지됨 → 자동 청소 시작');
           startAutoClean();
         } else {
           console.log('🧹 배변 없음');
@@ -237,7 +243,7 @@ IR.on('alert', (level, tick) => {
   // 처음 올라올 때 감시 시작
   if (isAccessed && !isMonitoring) {
     isMonitoring = true;
-    console.log('🧍 감시 시작');
+    console.log('👀 감시 모드 시작됨 (강아지 올라옴)');
   }
 });
 
