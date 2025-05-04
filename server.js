@@ -210,6 +210,24 @@ IR.on('alert', (level, tick) => {
 
   broadcast('sensorUpdate', sensorData);
 
+  
+    // 배변ai테스트 지우면됩니다
+    // isMonitoring = false;
+    console.log('⬇️ 이탈 감지, 캡처 시작');
+
+    captureImage(async (err, imagePath) => {
+      if (!err) {
+        await detectImage(imagePath);
+        if (detectedPoop) {
+          console.log('💩 배변 감지됨 → 자동 청소 시작');
+          startAutoClean();
+        } else {
+          console.log('🧹 배변 없음');
+        }
+      }
+    });
+    // 테스트ai테스트 지우면됩니다
+
   // 강아지 올라옴 → 감지되면 청소 멈춤
   if (isAccessed && isAutoCleaning && !isCleaningPaused) {
     console.log('⛔ IR 감지 → 청소 일시정지');
