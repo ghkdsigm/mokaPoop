@@ -1,9 +1,8 @@
 const { Gpio } = require('pigpio');
 
 // IR 센서 핀
-const ir = new Gpio(23, {
+const IR = new Gpio(23, {
   mode: Gpio.INPUT,
-  pullUpDown: Gpio.PUD_DOWN,
   alert: true
 });
 
