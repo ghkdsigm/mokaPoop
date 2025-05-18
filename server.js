@@ -160,27 +160,18 @@ async function detectImage(imagePath) {
       .resizeBilinear([64, 64])
       .toFloat()
       .div(tf.scalar(255.0))
-      .expandDims(0); // [1, 64, 64, 3]
-
-    const meanPixel = tf.mean(imageTensor).arraySync();
-    if (meanPixel < 0.1) {
-      console.warn('⚠️ 이미지가 너무 어두움, 예측 무시');
-      return;
-    }
+      .expandDims(0);
 
     const prediction = await model.predict(imageTensor).data();
-    const probs = tf.softmax(tf.tensor(prediction)).arraySync();
-    const [poopProb, urineProb, noneProb] = probs;
-    const margin = Math.max(poopProb, urineProb) - noneProb;
+    const [poopProb, urineProb, noneProb] = prediction;
 
-    console.log('🔬 예측 결과:', { poopProb, urineProb, noneProb, margin });
+    const poopUrineTotal = poopProb + urineProb;
+    const margin = poopUrineTotal - noneProb;
 
-    detectedPoop = (margin > 0.4 && noneProb < 0.5);
-    console.log(
-      detectedPoop
-        ? `🧪 배변 감지 성공 (poop:${poopProb.toFixed(2)} / urine:${urineProb.toFixed(2)})`
-        : '❌ 배변 감지 실패'
-    );
+    detectedPoop = (poopUrineTotal > 0.6 && margin > 0.2);
+
+    console.log('🔬 예측결과 → poop:', poopProb.toFixed(3), 'urine:', urineProb.toFixed(3), 'none:', noneProb.toFixed(3));
+    console.log('📊 margin:', margin.toFixed(3), '→ 감지 결과:', detectedPoop ? '💩 감지됨' : '❌ 미감지');
   } catch (e) {
     console.error('❗ detectImage 에러:', e.message);
   }
