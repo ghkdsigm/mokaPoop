@@ -1,6 +1,6 @@
 const { Gpio } = require('pigpio');
 
-const IR = new Gpio(23, {
+const IR = new Gpio(17, {
   mode: Gpio.INPUT,
   pullUpDown: Gpio.PUD_DOWN,
   alert: true
