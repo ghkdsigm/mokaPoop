@@ -113,6 +113,38 @@ function captureImage(callback) {
 }
 
 // 이미지 AI 분석
+// async function detectImage(imagePath) {
+//   if (!model) {
+//     console.error('❗ 모델이 아직 로딩되지 않음');
+//     return;
+//   }
+
+//   try {
+//     const jpegData = fs.readFileSync(imagePath);
+//     const rawImageData = jpeg.decode(jpegData, { useTArray: true });
+
+//     const imageTensor = tf.tensor3d(rawImageData.data, [rawImageData.height, rawImageData.width, 4], 'int32')
+//       .slice([0, 0, 0], [-1, -1, 3])        // RGBA → RGB
+//       .resizeBilinear([64, 64])            // ✅ 모델 입력 크기와 일치
+//       .toFloat()
+//       .div(255.0)
+//       .expandDims(0);                      // [1, 64, 64, 3]
+
+//     const prediction = await model.predict(imageTensor).data();
+//     const [poopProb, urineProb, noneProb] = prediction;
+//     const maxProb = Math.max(...prediction);
+//     const maxIdx = prediction.indexOf(maxProb);
+
+//     detectedPoop = (maxProb > 0.7 && maxIdx !== 2);
+//     console.log(
+//       detectedPoop
+//         ? `🧪 확신있는 배변 감지 (poop:${poopProb.toFixed(2)} / urine:${urineProb.toFixed(2)})`
+//         : '❌ 배변 감지 실패'
+//     );
+//   } catch (e) {
+//     console.error('❗ detectImage 에러:', e.message);
+//   }
+// }
 async function detectImage(imagePath) {
   if (!model) {
     console.error('❗ 모델이 아직 로딩되지 않음');
@@ -124,27 +156,36 @@ async function detectImage(imagePath) {
     const rawImageData = jpeg.decode(jpegData, { useTArray: true });
 
     const imageTensor = tf.tensor3d(rawImageData.data, [rawImageData.height, rawImageData.width, 4], 'int32')
-      .slice([0, 0, 0], [-1, -1, 3])        // RGBA → RGB
-      .resizeBilinear([64, 64])            // ✅ 모델 입력 크기와 일치
+      .slice([0, 0, 0], [-1, -1, 3])
+      .resizeBilinear([64, 64])
       .toFloat()
-      .div(255.0)
-      .expandDims(0);                      // [1, 64, 64, 3]
+      .div(tf.scalar(255.0))
+      .expandDims(0); // [1, 64, 64, 3]
+
+    const meanPixel = tf.mean(imageTensor).arraySync();
+    if (meanPixel < 0.1) {
+      console.warn('⚠️ 이미지가 너무 어두움, 예측 무시');
+      return;
+    }
 
     const prediction = await model.predict(imageTensor).data();
-    const [poopProb, urineProb, noneProb] = prediction;
-    const maxProb = Math.max(...prediction);
-    const maxIdx = prediction.indexOf(maxProb);
+    const probs = tf.softmax(tf.tensor(prediction)).arraySync();
+    const [poopProb, urineProb, noneProb] = probs;
+    const margin = Math.max(poopProb, urineProb) - noneProb;
 
-    detectedPoop = (maxProb > 0.7 && maxIdx !== 2);
+    console.log('🔬 예측 결과:', { poopProb, urineProb, noneProb, margin });
+
+    detectedPoop = (margin > 0.4 && noneProb < 0.5);
     console.log(
       detectedPoop
-        ? `🧪 확신있는 배변 감지 (poop:${poopProb.toFixed(2)} / urine:${urineProb.toFixed(2)})`
+        ? `🧪 배변 감지 성공 (poop:${poopProb.toFixed(2)} / urine:${urineProb.toFixed(2)})`
         : '❌ 배변 감지 실패'
     );
   } catch (e) {
     console.error('❗ detectImage 에러:', e.message);
   }
 }
+
 
 // 청소 시퀀스
 function runCleaningSequence(type = 'auto') {
