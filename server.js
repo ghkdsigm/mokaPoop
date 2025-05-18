@@ -135,7 +135,7 @@ async function detectImage(imagePath) {
     const maxProb = Math.max(...prediction);
     const maxIdx = prediction.indexOf(maxProb);
 
-    detectedPoop = (maxProb > 0.9 && maxIdx !== 2);
+    detectedPoop = (maxProb > 0.7 && maxIdx !== 2);
     console.log(
       detectedPoop
         ? `🧪 확신있는 배변 감지 (poop:${poopProb.toFixed(2)} / urine:${urineProb.toFixed(2)})`
