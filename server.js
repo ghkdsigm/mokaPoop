@@ -265,30 +265,55 @@ function handleManualClean() {
 //     console.log('👀 감시 모드 시작됨 (강아지 올라옴)');
 //   }
 // });
-setInterval(() => {
-  console.log('⚙️ 테스트용 IR 감지 시뮬레이션 실행 중');
 
-  const isAccessed = true; // 항상 접근된 상태로 가정
+
+// 테스트용
+let fakeAccess = false;
+
+setInterval(() => {
+  fakeAccess = !fakeAccess; // true ↔ false 토글
+
+  const isAccessed = fakeAccess;
   sensorData.access = isAccessed;
   sensorData.time = new Date().toISOString();
 
-  console.log('📝 [TEST] 현재 sensorData:', sensorData);
+  console.log(`🧪 [TEST] 센서 상태: ${isAccessed ? '접근됨 (강아지 올라옴)' : '이탈 (내려감)'}`);
   broadcast('sensorUpdate', sensorData);
 
-  // 아래는 기존 IR 감지 시 처리 로직과 동일
-  captureImage(async (err, imagePath) => {
-    if (!err) {
-      await detectImage(imagePath);
-      if (detectedPoop) {
-        console.log('💩 [TEST] 배변 감지됨 → 자동 청소 시작');
-        startAutoClean();
-      } else {
-        console.log('🧹 [TEST] 배변 없음');
-      }
+  if (isAccessed) {
+    // 강아지가 올라온 상태 → 청소 일시정지
+    if (isAutoCleaning && !isCleaningPaused) {
+      console.log('⛔ [TEST] 강아지 올라옴 → 청소 일시정지');
+      pauseCleaning();
     }
-  });
 
-}, 5000); // 5초 간격
+    if (!isMonitoring) {
+      isMonitoring = true;
+      console.log('👀 [TEST] 감시 시작됨 (강아지 올라옴)');
+    }
+  } else {
+    // 강아지가 내려감 상태 → AI 감지 실행
+    console.log('⬇️ [TEST] 강아지 내려감 → 사진 캡처 시도');
+    captureImage(async (err, imagePath) => {
+      if (!err) {
+        await detectImage(imagePath);
+        if (detectedPoop) {
+          console.log('💩 [TEST] 배변 감지됨 → 자동 청소 시작');
+          startAutoClean();
+        } else {
+          console.log('🧹 [TEST] 배변 없음');
+        }
+      }
+    });
+
+    if (isCleaningPaused && resumeCleaning) {
+      console.log('▶ [TEST] IR 미감지 → 청소 재개');
+      resumeCleaningSequence();
+    }
+
+    isMonitoring = false;
+  }
+}, 5000);
 
 
 // WebSocket 연결
