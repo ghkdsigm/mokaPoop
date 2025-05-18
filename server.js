@@ -200,70 +200,96 @@ function handleManualClean() {
 }
 
 // IR 센서 감지 처리
-IR.on('alert', (level, tick) => {
-  console.log('📡 IR 센서 alert 감지됨 → level:', level, 'tick:', tick);
-  const isAccessed = level === 1;
+// 임시주석처리 ir센서 처리 안돼서, 테스트도해야해서
+// IR.on('alert', (level, tick) => {
+//   console.log('📡 IR 센서 alert 감지됨 → level:', level, 'tick:', tick);
+//   const isAccessed = level === 1;
+//   sensorData.access = isAccessed;
+//   sensorData.time = new Date().toISOString();
+
+//   console.log('📝 현재 sensorData:', sensorData);
+
+//   broadcast('sensorUpdate', sensorData);
+
+  
+//     // 배변ai테스트 지우면됩니다
+//     // isMonitoring = false;
+//     console.log('⬇️ 이탈 감지, 캡처 시작');
+
+//     captureImage(async (err, imagePath) => {
+//       if (!err) {
+//         await detectImage(imagePath);
+//         if (detectedPoop) {
+//           console.log('💩 배변 감지됨 → 자동 청소 시작');
+//           startAutoClean();
+//         } else {
+//           console.log('🧹 배변 없음');
+//         }
+//       }
+//     });
+//     // 테스트ai테스트 지우면됩니다
+
+//   // 강아지 올라옴 → 감지되면 청소 멈춤
+//   if (isAccessed && isAutoCleaning && !isCleaningPaused) {
+//     console.log('⛔ IR 감지 → 청소 일시정지');
+//     pauseCleaning();
+//   }
+
+//   // 강아지 내려감 → 재개 조건되면 청소 재개
+//   if (!isAccessed && isCleaningPaused && resumeCleaning) {
+//     console.log('▶ IR 미감지 → 청소 재개');
+//     resumeCleaningSequence();
+//   }
+
+//   // 이탈 → 감시 중이면 AI 감지 시작
+//   if (!isAccessed && !isAutoCleaning && isMonitoring) {
+//     isMonitoring = false;
+//     console.log('⬇️ 이탈 감지, 캡처 시작');
+
+//     captureImage(async (err, imagePath) => {
+//       if (!err) {
+//         await detectImage(imagePath);
+//         if (detectedPoop) {
+//           console.log('💩 배변 감지됨 → 자동 청소 시작');
+//           startAutoClean();
+//         } else {
+//           console.log('🧹 배변 없음');
+//         }
+//       }
+//     });
+//   }
+
+//   // 처음 올라올 때 감시 시작
+//   if (isAccessed && !isMonitoring) {
+//     isMonitoring = true;
+//     console.log('👀 감시 모드 시작됨 (강아지 올라옴)');
+//   }
+// });
+setInterval(() => {
+  console.log('⚙️ 테스트용 IR 감지 시뮬레이션 실행 중');
+
+  const isAccessed = true; // 항상 접근된 상태로 가정
   sensorData.access = isAccessed;
   sensorData.time = new Date().toISOString();
 
-  console.log('📝 현재 sensorData:', sensorData);
-
+  console.log('📝 [TEST] 현재 sensorData:', sensorData);
   broadcast('sensorUpdate', sensorData);
 
-  
-    // 배변ai테스트 지우면됩니다
-    // isMonitoring = false;
-    console.log('⬇️ 이탈 감지, 캡처 시작');
-
-    captureImage(async (err, imagePath) => {
-      if (!err) {
-        await detectImage(imagePath);
-        if (detectedPoop) {
-          console.log('💩 배변 감지됨 → 자동 청소 시작');
-          startAutoClean();
-        } else {
-          console.log('🧹 배변 없음');
-        }
+  // 아래는 기존 IR 감지 시 처리 로직과 동일
+  captureImage(async (err, imagePath) => {
+    if (!err) {
+      await detectImage(imagePath);
+      if (detectedPoop) {
+        console.log('💩 [TEST] 배변 감지됨 → 자동 청소 시작');
+        startAutoClean();
+      } else {
+        console.log('🧹 [TEST] 배변 없음');
       }
-    });
-    // 테스트ai테스트 지우면됩니다
+    }
+  });
 
-  // 강아지 올라옴 → 감지되면 청소 멈춤
-  if (isAccessed && isAutoCleaning && !isCleaningPaused) {
-    console.log('⛔ IR 감지 → 청소 일시정지');
-    pauseCleaning();
-  }
+}, 5000); // 5초 간격
 
-  // 강아지 내려감 → 재개 조건되면 청소 재개
-  if (!isAccessed && isCleaningPaused && resumeCleaning) {
-    console.log('▶ IR 미감지 → 청소 재개');
-    resumeCleaningSequence();
-  }
-
-  // 이탈 → 감시 중이면 AI 감지 시작
-  if (!isAccessed && !isAutoCleaning && isMonitoring) {
-    isMonitoring = false;
-    console.log('⬇️ 이탈 감지, 캡처 시작');
-
-    captureImage(async (err, imagePath) => {
-      if (!err) {
-        await detectImage(imagePath);
-        if (detectedPoop) {
-          console.log('💩 배변 감지됨 → 자동 청소 시작');
-          startAutoClean();
-        } else {
-          console.log('🧹 배변 없음');
-        }
-      }
-    });
-  }
-
-  // 처음 올라올 때 감시 시작
-  if (isAccessed && !isMonitoring) {
-    isMonitoring = true;
-    console.log('👀 감시 모드 시작됨 (강아지 올라옴)');
-  }
-});
 
 // WebSocket 연결
 wss.on('connection', ws => {
