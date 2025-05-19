@@ -90,7 +90,7 @@ async function detectImage(imagePath) {
       .toFloat().div(255).expandDims(0);
     const [poop, urine, none] = await model.predict(tensor).data();
     const margin = (poop + urine) - none;
-    detectedPoop = (poop + urine > 0.6 && margin > 0.2);
+    detectedPoop = (poop + urine > 0.9 && margin > 0.2);
     console.log('🔬 예측결과 → poop:', poop.toFixed(3), 'urine:', urine.toFixed(3), 'none:', none.toFixed(3));
     console.log('📊 margin:', margin.toFixed(3), '→ 감지 결과:', detectedPoop ? '💩 감지됨' : '❌ 미감지');
   } catch (e) {
