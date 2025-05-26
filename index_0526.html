@@ -102,17 +102,9 @@
             break;
 
           case 'captureSuccess':
-            const imageUrl = `http://192.168.45.111:8001/${msg.data.filename}?t=${Date.now()}`;
-            img.src = imageUrl;
             status.innerText = `✅ 캡처 완료: ${msg.data.filename}`;
-
-            // ✅ 자동 다운로드 트리거
-            const a = document.createElement('a');
-            a.href = imageUrl;
-            a.download = msg.data.filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+			// img.src = `/${msg.data.filename}?t=${Date.now()}`; //라즈베리파이 내에서 사용하려면 이걸로 다시 변경
+            img.src = `http://192.168.45.111:8001/${msg.data.filename}?t=${Date.now()}`; //프론트 외부용
             break;
 
           case 'captureError':
@@ -123,7 +115,6 @@
             console.warn('❗ 알 수 없는 메시지 타입:', msg.type);
         }
       };
-
 
       ws.onclose = () => {
         status.innerText = '❌ WebSocket 연결 종료';
