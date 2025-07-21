@@ -41,7 +41,7 @@ let isMonitoring = false;
 let currentCleaningType = '';
 let cleaningTimeouts = [];
 let model;
-let cleaningStartedAt = 0; // ⭐ 청소 시작 시각
+let cleaningStartedAt = 0; // 청소 시작 시각
 
 // 웹캠 설정
 const Webcam = NodeWebcam.create({
@@ -52,9 +52,9 @@ const Webcam = NodeWebcam.create({
 async function loadModel() {
   try {
     model = await tf.loadLayersModel('http://localhost:8001/tfjs_model/model.json');
-    console.log('✅ 모델 로딩 완료');
+    console.log('모델 로딩 완료');
   } catch (err) {
-    console.error('❗ 모델 로딩 실패:', err.message);
+    console.error('모델 로딩 실패:', err.message);
   }
 }
 loadModel();
@@ -69,14 +69,14 @@ function broadcast(type, data) {
 
 // 사진 촬영
 function captureImage(callback) {
-  console.log('📸 사진 촬영 시도');
+  console.log('사진 촬영 시도');
   fs.readdirSync(__dirname).forEach(file => {
     if (file.startsWith('photo_') && file.endsWith('.jpg')) fs.unlinkSync(path.join(__dirname, file));
   });
   const filename = `photo_${Date.now()}`;
   Webcam.capture(filename, (err, data) => {
     if (err) return callback(err);
-    console.log('✅ 사진 촬영 완료:', data);
+    console.log('사진 촬영 완료:', data);
     broadcast('captureSuccess', { filename: path.basename(data) });
     callback(null, path.join(__dirname, `${filename}.jpg`));
   });
@@ -84,7 +84,7 @@ function captureImage(callback) {
 
 // AI 예측
 async function detectImage(imagePath) {
-  if (!model) return console.error('❗ 모델이 아직 로딩되지 않음');
+  if (!model) return console.error('모델이 아직 로딩되지 않음');
   try {
     const jpegData = fs.readFileSync(imagePath);
     const raw = jpeg.decode(jpegData, { useTArray: true });
@@ -95,10 +95,10 @@ async function detectImage(imagePath) {
     const [poop, urine, none] = await model.predict(tensor).data();
     const margin = (poop + urine) - none;
     detectedPoop = (poop + urine > 0.9 && margin > 0.2);
-    console.log('🔬 예측결과 → poop:', poop.toFixed(3), 'urine:', urine.toFixed(3), 'none:', none.toFixed(3));
-    console.log('📊 margin:', margin.toFixed(3), '→ 감지 결과:', detectedPoop ? '💩 감지됨' : '❌ 미감지');
+    console.log('예측결과 → poop:', poop.toFixed(3), 'urine:', urine.toFixed(3), 'none:', none.toFixed(3));
+    console.log('margin:', margin.toFixed(3), '→ 감지 결과:', detectedPoop ? '감지됨' : '미감지');
   } catch (e) {
-    console.error('❗ detectImage 에러:', e.message);
+    console.error('detectImage 에러:', e.message);
   }
 }
 
@@ -110,17 +110,17 @@ function runCleaningSequence(type = 'auto') {
   resumeCleaning = false;
   cleaningStartedAt = Date.now();
   cleaningTimeouts = [
-    setTimeout(() => { console.log('🌀 servoWrite(500)'); servo.servoWrite(500); }, 0),
-    setTimeout(() => { console.log('🌀 servoWrite(2500)'); servo.servoWrite(2500); }, 2000),
-    setTimeout(() => { console.log('🌀 servoWrite(1500)'); servo.servoWrite(1500); }, 4000),
+    setTimeout(() => { console.log('servoWrite(500)'); servo.servoWrite(500); }, 0),
+    setTimeout(() => { console.log('servoWrite(2500)'); servo.servoWrite(2500); }, 2000),
+    setTimeout(() => { console.log('servoWrite(1500)'); servo.servoWrite(1500); }, 4000),
     setTimeout(() => {
       if (!isCleaningPaused) {
-        console.log(`✅ ${type === 'auto' ? '자동' : '수동'} 청소 완료`);
+        console.log(`${type === 'auto' ? '자동' : '수동'} 청소 완료`);
         if (type === 'auto') detectedPoop = false;
         isAutoCleaning = false;
         currentCleaningType = '';
       } else {
-        console.log(`🕒 ${type === 'auto' ? '자동' : '수동'} 청소 중단됨, 재개 대기중`);
+        console.log(`${type === 'auto' ? '자동' : '수동'} 청소 중단됨, 재개 대기중`);
         resumeCleaning = true;
       }
     }, 10000)
@@ -128,14 +128,14 @@ function runCleaningSequence(type = 'auto') {
 }
 
 function pauseCleaning() {
-  console.log('⏸️ 강아지 감지됨, 청소 일시정지');
+  console.log('강아지 감지됨, 청소 일시정지');
   isCleaningPaused = true;
   cleaningTimeouts.forEach(clearTimeout);
   servo.servoWrite(1500);
 }
 
 function resumeCleaningSequence() {
-  console.log('▶️ 청소 재개');
+  console.log('청소 재개');
   isCleaningPaused = false;
   resumeCleaning = false;
   runCleaningSequence(currentCleaningType);
@@ -152,28 +152,28 @@ function handleManualClean() {
 // IR 센서 감지 처리
 // 임시주석처리 ir센서 처리 안돼서, 테스트도해야해서
 // IR.on('alert', (level, tick) => {
-//   console.log('📡 IR 센서 alert 감지됨 → level:', level, 'tick:', tick);
+//   console.log('IR 센서 alert 감지됨 → level:', level, 'tick:', tick);
 //   const isAccessed = level === 1;
 //   sensorData.access = isAccessed;
 //   sensorData.time = new Date().toISOString();
 
-//   console.log('📝 현재 sensorData:', sensorData);
+//   console.log('현재 sensorData:', sensorData);
 
 //   broadcast('sensorUpdate', sensorData);
 
   
 //     // 배변ai테스트 지우면됩니다
 //     // isMonitoring = false;
-//     console.log('⬇️ 이탈 감지, 캡처 시작');
+//     console.log('이탈 감지, 캡처 시작');
 
 //     captureImage(async (err, imagePath) => {
 //       if (!err) {
 //         await detectImage(imagePath);
 //         if (detectedPoop) {
-//           console.log('💩 배변 감지됨 → 자동 청소 시작');
+//           console.log('배변 감지됨 → 자동 청소 시작');
 //           startAutoClean();
 //         } else {
-//           console.log('🧹 배변 없음');
+//           console.log('배변 없음');
 //         }
 //       }
 //     });
@@ -181,29 +181,29 @@ function handleManualClean() {
 
 //   // 강아지 올라옴 → 감지되면 청소 멈춤
 //   if (isAccessed && isAutoCleaning && !isCleaningPaused) {
-//     console.log('⛔ IR 감지 → 청소 일시정지');
+//     console.log('IR 감지 → 청소 일시정지');
 //     pauseCleaning();
 //   }
 
 //   // 강아지 내려감 → 재개 조건되면 청소 재개
 //   if (!isAccessed && isCleaningPaused && resumeCleaning) {
-//     console.log('▶ IR 미감지 → 청소 재개');
+//     console.log('IR 미감지 → 청소 재개');
 //     resumeCleaningSequence();
 //   }
 
 //   // 이탈 → 감시 중이면 AI 감지 시작
 //   if (!isAccessed && !isAutoCleaning && isMonitoring) {
 //     isMonitoring = false;
-//     console.log('⬇️ 이탈 감지, 캡처 시작');
+//     console.log('이탈 감지, 캡처 시작');
 
 //     captureImage(async (err, imagePath) => {
 //       if (!err) {
 //         await detectImage(imagePath);
 //         if (detectedPoop) {
-//           console.log('💩 배변 감지됨 → 자동 청소 시작');
+//           console.log('배변 감지됨 → 자동 청소 시작');
 //           startAutoClean();
 //         } else {
-//           console.log('🧹 배변 없음');
+//           console.log('배변 없음');
 //         }
 //       }
 //     });
@@ -212,7 +212,7 @@ function handleManualClean() {
 //   // 처음 올라올 때 감시 시작
 //   if (isAccessed && !isMonitoring) {
 //     isMonitoring = true;
-//     console.log('👀 감시 모드 시작됨 (강아지 올라옴)');
+//     console.log('감시 모드 시작됨 (강아지 올라옴)');
 //   }
 // });
 
@@ -224,33 +224,33 @@ setInterval(() => {
   const isAccessed = fakeAccess;
   sensorData.access = isAccessed;
   sensorData.time = new Date().toISOString();
-  console.log(`🧪 [TEST] 센서 상태: ${isAccessed ? '접근됨 (강아지 올라옴)' : '이탈 (내려감)'}`);
+  console.log(`[TEST] 센서 상태: ${isAccessed ? '접근됨 (강아지 올라옴)' : '이탈 (내려감)'}`);
   broadcast('sensorUpdate', sensorData);
 
   if (isAccessed) {
     if (isAutoCleaning && !isCleaningPaused) {
       const elapsed = Date.now() - cleaningStartedAt;
       if (elapsed < 4000) {
-        console.log(`⚠️ [TEST] 청소 시작 ${elapsed}ms 후 접근 감지 → 무시`);
+        console.log(`[TEST] 청소 시작 ${elapsed}ms 후 접근 감지 → 무시`);
       } else {
-        console.log('⛔ [TEST] 강아지 올라옴 → 청소 일시정지');
+        console.log('[TEST] 강아지 올라옴 → 청소 일시정지');
         pauseCleaning();
       }
     }
     if (!isMonitoring) {
       isMonitoring = true;
-      console.log('👀 [TEST] 감시 시작됨');
+      console.log('[TEST] 감시 시작됨');
     }
   } else {
-    console.log('⬇️ [TEST] 강아지 내려감 → 사진 캡처 시도');
+    console.log('[TEST] 강아지 내려감 → 사진 캡처 시도');
     captureImage(async (err, imagePath) => {
       if (!err) {
         await detectImage(imagePath);
         if (detectedPoop) {
-          console.log('💩 [TEST] 배변 감지됨 → 자동 청소 시작');
+          console.log('[TEST] 배변 감지됨 → 자동 청소 시작');
           startAutoClean();
         } else {
-          console.log('🧹 [TEST] 배변 없음');
+          console.log('[TEST] 배변 없음');
         }
       }
     });
@@ -285,7 +285,7 @@ wss.on('connection', ws => {
 // REST API
 app.get('/api/sensor', (req, res) => res.json(sensorData));
 app.get('/capture', (req, res) => {
-  captureImage(() => res.send('✅ 수동 캡처 완료'));
+  captureImage(() => res.send('수동 캡처 완료'));
 });
 
 // 서버 시작
