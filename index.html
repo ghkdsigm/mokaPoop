@@ -105,6 +105,15 @@
             status.innerText = `✅ 캡처 완료: ${msg.data.filename}`;
 			// img.src = `/${msg.data.filename}?t=${Date.now()}`; //라즈베리파이 내에서 사용하려면 이걸로 다시 변경
             img.src = `http://192.168.45.111:8001/${msg.data.filename}?t=${Date.now()}`; //프론트 외부용
+            
+            // 자동 다운로드 트리거
+            const link = document.createElement('a');
+            link.href = imageUrl;
+            link.download = `capture_${Date.now()}.jpg`; // 다운로드될 파일명
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            break;
             break;
 
           case 'captureError':
