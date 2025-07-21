@@ -105,6 +105,10 @@
             status.innerText = `✅ 캡처 완료: ${msg.data.filename}`;
 			//// img.src = `/${msg.data.filename}?t=${Date.now()}`; //라즈베리파이 내에서 사용하려면 이걸로 다시 변경
             //img.src = `http://192.168.45.111:8001/${msg.data.filename}?t=${Date.now()}`; //프론트 외부용
+            const imageUrl = `http://192.168.45.111:8001/${msg.data.filename}?t=${Date.now()}`;
+            img.src = imageUrl;
+
+            // fetch → blob → 파일로 저장
             fetch(imageUrl)
               .then(response => {
                 if (!response.ok) {
