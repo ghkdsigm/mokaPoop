@@ -23,7 +23,11 @@ const connectedClients = new Set();
 
 // 정적 파일
 app.use('/tfjs_model', express.static(path.join(__dirname, 'tfjs_model')));
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname), {
+  setHeaders: (res, path) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
 app.use(cors());
 app.use(bodyParser.json());
 
