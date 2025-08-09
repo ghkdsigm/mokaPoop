@@ -82,6 +82,7 @@ function decodeToTensor(buf) {
   if (useNode) {
     let img = tf.node.decodeImage(buf, 3);
     img = tf.image.resizeBilinear(img, [INPUT_SIZE, INPUT_SIZE]).toFloat().div(255);
+    img = img.sub(0.5).mul(2); // [-1,1]
     return img;
   } else {
     const { width, height, data } = jpeg.decode(buf, { useTArray: true });
@@ -90,6 +91,7 @@ function decodeToTensor(buf) {
       .resizeBilinear([INPUT_SIZE, INPUT_SIZE])
       .toFloat()
       .div(255);
+    img = img.sub(0.5).mul(2); // [-1,1]
     return img;
   }
 }
