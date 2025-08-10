@@ -35,6 +35,16 @@ const MIN_CAPTURE_INTERVAL = Number(process.env.MIN_CAPTURE_INTERVAL || 3000);
 let lastCaptureTime = 0;
 let isInferenceRunning = false;
 
+// 파이프라인 쿨다운과 락
+const PIPELINE_COOLDOWN_MS = Number(process.env.PIPELINE_COOLDOWN_MS || 2000);
+let pipelineBusy = false;
+let cooldownUntil = 0;
+
+function canStartPipeline() {
+  const now = Date.now();
+  return !pipelineBusy && now >= cooldownUntil && (now - lastCaptureTime) >= MIN_CAPTURE_INTERVAL;
+}
+
 // 모델 폴더 탐색
 function resolveModelDir() {
   const cands = [
@@ -293,7 +303,7 @@ function captureImage(callback) {
   const done = (err, file) => {
     if (err) return callback(err);
     console.log(`캡처 완료: ${Date.now() - t0}ms`);
-    lastPhotoPath = file; // 최근 캡처 경로 저장
+    lastPhotoPath = file;
     broadcast('captureSuccess', { filename: path.basename(file) });
     callback(null, file);
   };
@@ -440,17 +450,30 @@ function startTestTimer() {
       }
     } else {
       setTimeout(() => {
+        if (!canStartPipeline() || isInferenceRunning) {
+          console.log('[TEST] 파이프라인 바쁨 또는 쿨다운 중 → 캡처 스킵');
+          return;
+        }
+        pipelineBusy = true;
         captureImage(async (err, imagePath) => {
           if (!err) {
-            await detectImage(imagePath);
-            if (detectedPoop) {
-              console.log('[TEST] 배변 감지됨 → 자동 청소 시작');
-              startAutoClean();
-            } else {
-              console.log('[TEST] 배변 없음');
+            try {
+              await detectImage(imagePath);
+              if (detectedPoop) {
+                console.log('[TEST] 배변 감지됨 → 자동 청소 시작');
+                startAutoClean();
+              } else {
+                console.log('[TEST] 배변 없음');
+              }
+            } catch (e) {
+              console.error('추론 실패:', e.message);
+            } finally {
+              pipelineBusy = false;
+              cooldownUntil = Date.now() + PIPELINE_COOLDOWN_MS;
             }
           } else {
             console.error('캡처 실패:', err.message);
+            pipelineBusy = false;
           }
         });
       }, 800);
@@ -529,16 +552,40 @@ app.get('/health', (req, res) => {
 
 app.get('/api/sensor', (req, res) => res.json(sensorData));
 
+// 파이프라인 가드가 들어간 캡처 엔드포인트
 app.get('/capture', (req, res) => {
-  if (isInferenceRunning) return res.status(429).json({ error: '추론 실행 중' });
-  captureImage(async (err, imagePath) => {
-    if (err) return res.status(500).send('캡처 실패: ' + err.message);
-    await detectImage(imagePath);
-    res.json({
-      imagePath: path.basename(imagePath),
-      detectedPoop,
-      inferenceTimeMs: inferenceCount > 0 ? Math.round(totalInferenceTime / inferenceCount) : 0
+  const now = Date.now();
+  if (!model) return res.status(503).json({ error: '모델 로딩 중' });
+  if (!canStartPipeline()) {
+    return res.status(429).json({
+      error: 'busy',
+      retryAfterMs: Math.max(0, Math.max(cooldownUntil - now, MIN_CAPTURE_INTERVAL - (now - lastCaptureTime)))
     });
+  }
+  if (isInferenceRunning) {
+    return res.status(429).json({ error: '추론 실행 중' });
+  }
+
+  pipelineBusy = true;
+
+  captureImage(async (err, imagePath) => {
+    if (err) {
+      pipelineBusy = false;
+      return res.status(500).send('캡처 실패: ' + err.message);
+    }
+    try {
+      await detectImage(imagePath);
+      res.json({
+        imagePath: path.basename(imagePath),
+        detectedPoop,
+        inferenceTimeMs: inferenceCount > 0 ? Math.round(totalInferenceTime / inferenceCount) : 0
+      });
+    } catch (e) {
+      res.status(500).send('추론 실패: ' + e.message);
+    } finally {
+      pipelineBusy = false;
+      cooldownUntil = Date.now() + PIPELINE_COOLDOWN_MS;
+    }
   });
 });
 
@@ -557,7 +604,7 @@ app.get('/api/performance', (req, res) => {
 app.get('/last-photo.jpg', (req, res) => {
   try {
     if (!lastPhotoPath || !fs.existsSync(lastPhotoPath)) {
-      return res.status(404).send('no photo yet');
+    return res.status(404).send('no photo yet');
     }
     res.setHeader('Cache-Control', 'no-store');
     fs.createReadStream(lastPhotoPath).pipe(res);
@@ -612,14 +659,18 @@ app.get('/viewer', (req, res) => {
     meta.textContent = '캡처 중...';
     try {
       const r = await fetch('/capture');
-      if (!r.ok) throw new Error('capture failed');
+      if (!r.ok) {
+        const data = await r.json().catch(()=>({}));
+        const retry = data && data.retryAfterMs ? ' ' + data.retryAfterMs + 'ms 후 재시도' : '';
+        throw new Error('capture failed' + retry);
+      }
       await r.json();
       refreshImage();
       meta.textContent = '캡처 완료';
     } catch (e) {
       meta.textContent = '캡처 실패';
     } finally {
-      setTimeout(() => { btn.disabled = false; }, 800);
+      setTimeout(() => { btn.disabled = false; }, 1500);
     }
   });
 
