@@ -666,14 +666,25 @@ process.on('SIGINT', () => {
 // ==============================
 // 시작
 // ==============================
+function getLocalIP() {
+  const ifs = os.networkInterfaces();
+  for (const k in ifs) {
+    for (const i of ifs[k]) {
+      if (i.family === 'IPv4' && !i.internal) return i.address;
+    }
+  }
+  return 'localhost';
+}
+
 (async () => {
   await initCapture();
   await loadModel();
-  server.listen(PORT, () => {
-    console.log(`HTTP: http://localhost:${PORT}`);
-    console.log(`WebSocket: ws://localhost:${WS_PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    const ip = getLocalIP();
+    console.log(`HTTP:  http://${ip}:${PORT}`);
+    console.log(`WebSocket: ws://${ip}:${WS_PORT}`);
+    console.log(`뷰어:  http://${ip}:${PORT}/viewer`);
     console.log(`입력 크기: ${INPUT_SIZE}x${INPUT_SIZE}, 임계값: sum>${THRESH_SUM}, margin>${THRESH_MARGIN}`);
     console.log(`백엔드: ${backend}, 캡처: ${capCfg.backend}, GPIO: ${gpioEnabled ? '사용' : '비활성'}`);
-    console.log(`뷰어: http://<라즈베리파이IP>:${PORT}/viewer`);
   });
 })();
