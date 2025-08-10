@@ -114,6 +114,9 @@ let cleaningStartedAt = 0;
 let inferenceCount = 0;
 let totalInferenceTime = 0;
 
+// 마지막 캡처 파일 경로
+let lastPhotoPath = null;
+
 // ==============================
 // 캡처 백엔드 탐색
 // ==============================
@@ -290,6 +293,7 @@ function captureImage(callback) {
   const done = (err, file) => {
     if (err) return callback(err);
     console.log(`캡처 완료: ${Date.now() - t0}ms`);
+    lastPhotoPath = file; // 최근 캡처 경로 저장
     broadcast('captureSuccess', { filename: path.basename(file) });
     callback(null, file);
   };
@@ -407,47 +411,6 @@ function startAutoClean() {
 function handleManualClean() {
   if (!isAutoCleaning) runCleaningSequence('manual');
 }
-
-// ==============================
-// IR 센서 연결 예시 (현장 적용 시 주석 해제)
-// ==============================
-// if (gpioEnabled) {
-//   IR.on('alert', (level) => {
-//     const isAccessed = level === 1;
-//     sensorData.access = isAccessed;
-//     sensorData.time = new Date().toISOString();
-//     broadcast('sensorUpdate', sensorData);
-
-//     if (isAccessed) {
-//       if (isAutoCleaning && !isCleaningPaused) {
-//         const elapsed = Date.now() - cleaningStartedAt;
-//         if (elapsed >= 4000) pauseCleaning();
-//       }
-//       if (!isMonitoring) {
-//         isMonitoring = true;
-//         console.log('감시 시작됨');
-//       }
-//     } else {
-//       setTimeout(() => {
-//         captureImage(async (err, imagePath) => {
-//           if (!err) {
-//             await detectImage(imagePath);
-//             if (detectedPoop) startAutoClean();
-//           } else {
-//             console.error('캡처 실패:', err.message);
-//           }
-//         });
-//       }, 500);
-
-//       if (isCleaningPaused && resumeCleaning) {
-//         setTimeout(() => {
-//           if (resumeCleaning) resumeCleaningSequence();
-//         }, 1000);
-//       }
-//       isMonitoring = false;
-//     }
-//   });
-// }
 
 // ==============================
 // 테스트 시뮬레이션 타이머
@@ -590,6 +553,84 @@ app.get('/api/performance', (req, res) => {
   });
 });
 
+// 마지막 캡처 이미지 바이너리 서빙
+app.get('/last-photo.jpg', (req, res) => {
+  try {
+    if (!lastPhotoPath || !fs.existsSync(lastPhotoPath)) {
+      return res.status(404).send('no photo yet');
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    fs.createReadStream(lastPhotoPath).pipe(res);
+  } catch (e) {
+    res.status(500).send('failed to read last photo');
+  }
+});
+
+// 간단 뷰어 페이지
+app.get('/viewer', (req, res) => {
+  const html = `<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Last Capture Viewer</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 16px; background: #0b0b0b; color: #fafafa; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  .row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+  button { padding: 10px 14px; font-size: 14px; border-radius: 10px; border: 0; background: #2b72ff; color: #fff; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: default; }
+  img { width: 100%; height: auto; background: #111; border-radius: 12px; }
+  .meta { font-size: 12px; color: #bbb; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row">
+      <button id="btn">캡처 실행</button>
+      <span class="meta" id="meta">대기중</span>
+    </div>
+    <img id="img" src="/last-photo.jpg" alt="last-capture" />
+  </div>
+
+<script>
+  const img = document.getElementById('img');
+  const meta = document.getElementById('meta');
+  const btn = document.getElementById('btn');
+
+  function refreshImage() {
+    const url = '/last-photo.jpg?v=' + Date.now();
+    img.src = url;
+    meta.textContent = new Date().toLocaleString() + ' 업데이트';
+  }
+
+  setInterval(refreshImage, 5000);
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    meta.textContent = '캡처 중...';
+    try {
+      const r = await fetch('/capture');
+      if (!r.ok) throw new Error('capture failed');
+      await r.json();
+      refreshImage();
+      meta.textContent = '캡처 완료';
+    } catch (e) {
+      meta.textContent = '캡처 실패';
+    } finally {
+      setTimeout(() => { btn.disabled = false; }, 800);
+    }
+  });
+
+  refreshImage();
+</script>
+</body>
+</html>`;
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(html);
+});
+
 app.post('/api/config', (req, res) => {
   const { testInterval: newInterval } = req.body;
   if (newInterval && newInterval >= 3000) {
@@ -633,5 +674,6 @@ process.on('SIGINT', () => {
     console.log(`WebSocket: ws://localhost:${WS_PORT}`);
     console.log(`입력 크기: ${INPUT_SIZE}x${INPUT_SIZE}, 임계값: sum>${THRESH_SUM}, margin>${THRESH_MARGIN}`);
     console.log(`백엔드: ${backend}, 캡처: ${capCfg.backend}, GPIO: ${gpioEnabled ? '사용' : '비활성'}`);
+    console.log(`뷰어: http://<라즈베리파이IP>:${PORT}/viewer`);
   });
 })();
