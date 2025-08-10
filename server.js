@@ -35,16 +35,6 @@ const MIN_CAPTURE_INTERVAL = Number(process.env.MIN_CAPTURE_INTERVAL || 3000);
 let lastCaptureTime = 0;
 let isInferenceRunning = false;
 
-// 파이프라인 쿨다운과 락
-const PIPELINE_COOLDOWN_MS = Number(process.env.PIPELINE_COOLDOWN_MS || 2000);
-let pipelineBusy = false;
-let cooldownUntil = 0;
-
-function canStartPipeline() {
-  const now = Date.now();
-  return !pipelineBusy && now >= cooldownUntil && (now - lastCaptureTime) >= MIN_CAPTURE_INTERVAL;
-}
-
 // 모델 폴더 탐색
 function resolveModelDir() {
   const cands = [
@@ -132,10 +122,11 @@ let lastPhotoPath = null;
 // ==============================
 const capCfg = {
   backend: 'unknown',
-  device: process.env.CAM_DEVICE || '/dev/video0',
+  device: process.env.CAM_DEVICE || '/dev/video0', // fswebcam 등 V4L2 계열에서 사용
   width: Number(process.env.CAM_WIDTH || 640),
   height: Number(process.env.CAM_HEIGHT || 480),
   quality: Number(process.env.CAM_QUALITY || 85),
+  rpiIndex: process.env.CAM_INDEX ? Number(process.env.CAM_INDEX) : null // rpicam 계열에서 카메라 인덱스 선택
 };
 
 function checkBinary(bin) {
@@ -149,9 +140,15 @@ function checkBinary(bin) {
 
 let webcam;
 async function initCapture() {
+  const hasRpiCam = await checkBinary('rpicam-jpeg');
   const hasLibcamera = await checkBinary('libcamera-jpeg');
   const hasFswebcam = await checkBinary('fswebcam');
 
+  if (hasRpiCam) {
+    capCfg.backend = 'rpicam';
+    console.log('[CAPTURE] rpicam-jpeg 사용');
+    return;
+  }
   if (hasLibcamera) {
     capCfg.backend = 'libcamera';
     console.log('[CAPTURE] libcamera-jpeg 사용');
@@ -253,6 +250,19 @@ async function loadModel() {
 // ==============================
 // 캡처
 // ==============================
+function captureWithRpiCam(filename, cb) {
+  const args = [];
+  if (capCfg.rpiIndex !== null && !Number.isNaN(capCfg.rpiIndex)) {
+    args.push('--camera', String(capCfg.rpiIndex));
+  }
+  args.push('--width', String(capCfg.width));
+  args.push('--height', String(capCfg.height));
+  args.push('--quality', String(capCfg.quality));
+  args.push('-t', '1000');
+  args.push('-o', filename);
+  execFile('rpicam-jpeg', args, (err) => cb(err, filename));
+}
+
 function captureWithLibcamera(filename, cb) {
   const args = [
     '-o', filename,
@@ -308,6 +318,7 @@ function captureImage(callback) {
     callback(null, file);
   };
 
+  if (capCfg.backend === 'rpicam') return captureWithRpiCam(filename, done);
   if (capCfg.backend === 'libcamera') return captureWithLibcamera(filename, done);
   if (capCfg.backend === 'fswebcam') return captureWithFswebcam(filename, done);
   if (capCfg.backend === 'node-webcam') return captureWithNodeWebcam(filename, done);
@@ -450,30 +461,17 @@ function startTestTimer() {
       }
     } else {
       setTimeout(() => {
-        if (!canStartPipeline() || isInferenceRunning) {
-          console.log('[TEST] 파이프라인 바쁨 또는 쿨다운 중 → 캡처 스킵');
-          return;
-        }
-        pipelineBusy = true;
         captureImage(async (err, imagePath) => {
           if (!err) {
-            try {
-              await detectImage(imagePath);
-              if (detectedPoop) {
-                console.log('[TEST] 배변 감지됨 → 자동 청소 시작');
-                startAutoClean();
-              } else {
-                console.log('[TEST] 배변 없음');
-              }
-            } catch (e) {
-              console.error('추론 실패:', e.message);
-            } finally {
-              pipelineBusy = false;
-              cooldownUntil = Date.now() + PIPELINE_COOLDOWN_MS;
+            await detectImage(imagePath);
+            if (detectedPoop) {
+              console.log('[TEST] 배변 감지됨 → 자동 청소 시작');
+              startAutoClean();
+            } else {
+              console.log('[TEST] 배변 없음');
             }
           } else {
             console.error('캡처 실패:', err.message);
-            pipelineBusy = false;
           }
         });
       }, 800);
@@ -552,40 +550,16 @@ app.get('/health', (req, res) => {
 
 app.get('/api/sensor', (req, res) => res.json(sensorData));
 
-// 파이프라인 가드가 들어간 캡처 엔드포인트
 app.get('/capture', (req, res) => {
-  const now = Date.now();
-  if (!model) return res.status(503).json({ error: '모델 로딩 중' });
-  if (!canStartPipeline()) {
-    return res.status(429).json({
-      error: 'busy',
-      retryAfterMs: Math.max(0, Math.max(cooldownUntil - now, MIN_CAPTURE_INTERVAL - (now - lastCaptureTime)))
-    });
-  }
-  if (isInferenceRunning) {
-    return res.status(429).json({ error: '추론 실행 중' });
-  }
-
-  pipelineBusy = true;
-
+  if (isInferenceRunning) return res.status(429).json({ error: '추론 실행 중' });
   captureImage(async (err, imagePath) => {
-    if (err) {
-      pipelineBusy = false;
-      return res.status(500).send('캡처 실패: ' + err.message);
-    }
-    try {
-      await detectImage(imagePath);
-      res.json({
-        imagePath: path.basename(imagePath),
-        detectedPoop,
-        inferenceTimeMs: inferenceCount > 0 ? Math.round(totalInferenceTime / inferenceCount) : 0
-      });
-    } catch (e) {
-      res.status(500).send('추론 실패: ' + e.message);
-    } finally {
-      pipelineBusy = false;
-      cooldownUntil = Date.now() + PIPELINE_COOLDOWN_MS;
-    }
+    if (err) return res.status(500).send('캡처 실패: ' + err.message);
+    await detectImage(imagePath);
+    res.json({
+      imagePath: path.basename(imagePath),
+      detectedPoop,
+      inferenceTimeMs: inferenceCount > 0 ? Math.round(totalInferenceTime / inferenceCount) : 0
+    });
   });
 });
 
@@ -604,7 +578,7 @@ app.get('/api/performance', (req, res) => {
 app.get('/last-photo.jpg', (req, res) => {
   try {
     if (!lastPhotoPath || !fs.existsSync(lastPhotoPath)) {
-    return res.status(404).send('no photo yet');
+      return res.status(404).send('no photo yet');
     }
     res.setHeader('Cache-Control', 'no-store');
     fs.createReadStream(lastPhotoPath).pipe(res);
@@ -659,18 +633,14 @@ app.get('/viewer', (req, res) => {
     meta.textContent = '캡처 중...';
     try {
       const r = await fetch('/capture');
-      if (!r.ok) {
-        const data = await r.json().catch(()=>({}));
-        const retry = data && data.retryAfterMs ? ' ' + data.retryAfterMs + 'ms 후 재시도' : '';
-        throw new Error('capture failed' + retry);
-      }
+      if (!r.ok) throw new Error('capture failed');
       await r.json();
       refreshImage();
       meta.textContent = '캡처 완료';
     } catch (e) {
       meta.textContent = '캡처 실패';
     } finally {
-      setTimeout(() => { btn.disabled = false; }, 1500);
+      setTimeout(() => { btn.disabled = false; }, 800);
     }
   });
 
