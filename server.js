@@ -296,14 +296,41 @@ function captureImage(callback) {
     console.log(`캡처 완료: ${Date.now() - t0}ms`);
     console.log(`사진 경로: ${file}`);
 
-    // 터미널에 이미지 미리보기 시도
     try {
-      if (terminalImage) {
-        const imageBuffer = fs.readFileSync(file);
-        const rendered = await terminalImage.buffer(imageBuffer);
-        console.log(rendered);
+      // TTY가 아니면(예: PM2/systemd) 이미지 출력 생략
+      if (process.stdout.isTTY) {
+        // 1) terminal-image 시도
+        if (terminalImage) {
+          const imageBuffer = fs.readFileSync(file);
+          const termWidth = Math.max(20, (process.stdout.columns || 80) - 2);
+          const rendered = await terminalImage.buffer(imageBuffer, { width: termWidth });
+          console.log(rendered);
+        } else {
+          // 2) chafa 폴백
+          execFile('which', ['chafa'], (e, out) => {
+            if (!e && out.toString().trim()) {
+              exec(`chafa --size=${(process.stdout.columns || 80)}x0 "${file}"`, (err2, stdout) => {
+                if (err2) console.warn('chafa 출력 실패:', err2.message);
+                else console.log(stdout);
+              });
+            } else {
+              // 3) catimg 폴백
+              execFile('which', ['catimg'], (e2, out2) => {
+                if (!e2 && out2.toString().trim()) {
+                  const cols = Math.max(20, (process.stdout.columns || 80) - 2);
+                  exec(`catimg -w ${cols} "${file}"`, (err3, stdout) => {
+                    if (err3) console.warn('catimg 출력 실패:', err3.message);
+                    else console.log(stdout);
+                  });
+                } else {
+                  console.log('터미널 이미지 모듈/툴이 없어 경로만 표시합니다. 설치: npm i terminal-image 또는 sudo apt install chafa');
+                }
+              });
+            }
+          });
+        }
       } else {
-        console.log('terminal-image 모듈이 없어 경로만 표시합니다. 설치: npm i terminal-image');
+        console.log('TTY가 아닌 환경입니다(예: PM2/systemd). 터미널 이미지 출력은 생략됩니다.');
       }
     } catch (viewErr) {
       console.warn('터미널 이미지 표시 실패:', viewErr.message);
