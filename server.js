@@ -7,7 +7,7 @@ const WebSocket = require('ws');
 const cors = require('cors');
 const fs = require('fs');
 const os = require('os');
-const { execFile } = require('child_process');
+const { execFile, exec } = require('child_process');
 const jpeg = require('jpeg-js');
 
 // 선택 모듈
@@ -17,6 +17,10 @@ try { NodeWebcam = require('node-webcam'); } catch (e) { /* optional */ }
 let pigpioAvailable = true;
 let Gpio = null;
 try { ({ Gpio } = require('pigpio')); } catch (e) { pigpioAvailable = false; }
+
+// 터미널 이미지 출력 모듈(선택)
+let terminalImage = null;
+try { terminalImage = require('terminal-image'); } catch (e) { /* optional */ }
 
 // ==============================
 // 환경 및 설정
@@ -287,9 +291,24 @@ function captureImage(callback) {
   const filename = path.join(__dirname, `photo_${Date.now()}.jpg`);
   const t0 = Date.now();
 
-  const done = (err, file) => {
+  const done = async (err, file) => {
     if (err) return callback(err);
     console.log(`캡처 완료: ${Date.now() - t0}ms`);
+    console.log(`사진 경로: ${file}`);
+
+    // 터미널에 이미지 미리보기 시도
+    try {
+      if (terminalImage) {
+        const imageBuffer = fs.readFileSync(file);
+        const rendered = await terminalImage.buffer(imageBuffer);
+        console.log(rendered);
+      } else {
+        console.log('terminal-image 모듈이 없어 경로만 표시합니다. 설치: npm i terminal-image');
+      }
+    } catch (viewErr) {
+      console.warn('터미널 이미지 표시 실패:', viewErr.message);
+    }
+
     broadcast('captureSuccess', { filename: path.basename(file) });
     callback(null, file);
   };
