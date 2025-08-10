@@ -7,7 +7,7 @@ const WebSocket = require('ws');
 const cors = require('cors');
 const fs = require('fs');
 const os = require('os');
-const { execFile, exec } = require('child_process');
+const { execFile } = require('child_process');
 const jpeg = require('jpeg-js');
 
 // 선택 모듈
@@ -17,10 +17,6 @@ try { NodeWebcam = require('node-webcam'); } catch (e) { /* optional */ }
 let pigpioAvailable = true;
 let Gpio = null;
 try { ({ Gpio } = require('pigpio')); } catch (e) { pigpioAvailable = false; }
-
-// 터미널 이미지 출력 모듈(선택)
-let terminalImage = null;
-try { terminalImage = require('terminal-image'); } catch (e) { /* optional */ }
 
 // ==============================
 // 환경 및 설정
@@ -291,63 +287,12 @@ function captureImage(callback) {
   const filename = path.join(__dirname, `photo_${Date.now()}.jpg`);
   const t0 = Date.now();
 
-  const done = async (err, file) => {
+  const done = (err, file) => {
     if (err) return callback(err);
     console.log(`캡처 완료: ${Date.now() - t0}ms`);
-    console.log(`사진 경로: ${file}`);
-
-    try {
-      const isTTY = process.stdout.isTTY === true;
-      if (!isTTY) {
-        console.log('TTY가 아닌 환경입니다. 터미널 이미지 출력은 건너뜁니다.');
-      } else {
-        const termCols = Math.max(20, (process.stdout.columns || 80) - 2);
-
-        // 1) terminal-image 시도
-        if (terminalImage) {
-          try {
-            const imageBuffer = fs.readFileSync(file);
-            const rendered = await terminalImage.buffer(imageBuffer, { width: termCols });
-            console.log(rendered);
-          } catch (e1) {
-            console.warn('terminal-image 출력 실패:', e1.message);
-            // 2) chafa 폴백 (절대경로)
-            const chafaPath = '/usr/bin/chafa';
-            fs.access(chafaPath, fs.constants.X_OK, (accErr) => {
-              if (!accErr) {
-                execFile(chafaPath, ['--size', `${termCols}x0`, file], (err2, stdout) => {
-                  if (err2) console.warn('chafa 출력 실패:', err2.message);
-                  else console.log(stdout);
-                });
-              } else {
-                console.log('chafa가 없습니다. 설치: sudo apt install -y chafa');
-              }
-            });
-          }
-        } else {
-          // terminal-image 미설치 → chafa 바로 시도
-          const chafaPath = '/usr/bin/chafa';
-          fs.access(chafaPath, fs.constants.X_OK, (accErr) => {
-            if (!accErr) {
-              execFile(chafaPath, ['--size', `${termCols}x0`, file], (err2, stdout) => {
-                if (err2) console.warn('chafa 출력 실패:', err2.message);
-                else console.log(stdout);
-              });
-            } else {
-              console.log('terminal-image 모듈 또는 chafa가 없어 경로만 표시합니다.');
-              console.log('설치: npm i terminal-image 또는 sudo apt install -y chafa');
-            }
-          });
-        }
-      }
-    } catch (viewErr) {
-      console.warn('터미널 이미지 표시 실패:', viewErr.message);
-    }
-
     broadcast('captureSuccess', { filename: path.basename(file) });
     callback(null, file);
   };
-
 
   if (capCfg.backend === 'libcamera') return captureWithLibcamera(filename, done);
   if (capCfg.backend === 'fswebcam') return captureWithFswebcam(filename, done);
