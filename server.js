@@ -228,13 +228,22 @@ function decodeToTensor(buf) {
 let model;
 async function loadModel() {
   try {
-    await loadTF();
+    await loadTF(); // backend 세팅
 
-    // 백엔드별 모델 경로 결정
+    // 백엔드별 모델 경로
     const isNode = backend === 'tfjs-node';
     const modelUrl = isNode
       ? 'file://' + path.join(MODEL_DIR, 'model.json')
       : `http://127.0.0.1:${PORT}/tfjs_model/model.json`;
+
+    // 디버그: 실제 존재 여부 출력
+    const filePath = path.join(MODEL_DIR, 'model.json');
+    console.log('[MODEL] backend=', backend);
+    console.log('[MODEL] MODEL_DIR=', MODEL_DIR);
+    console.log('[MODEL] file exists(model.json)=', fs.existsSync(filePath));
+    try {
+      console.log('[MODEL] dir list=', fs.readdirSync(MODEL_DIR));
+    } catch (_) {}
 
     console.log('모델 로딩 중...', modelUrl);
     const t0 = Date.now();
@@ -705,6 +714,7 @@ function getLocalIP() {
 
 (async () => {
   await initCapture();
+
   server.listen(PORT, '0.0.0.0', async () => {
     const ip = getLocalIP();
     console.log(`HTTP:  http://${ip}:${PORT}`);
@@ -713,7 +723,7 @@ function getLocalIP() {
     console.log(`입력 크기: ${INPUT_SIZE}x${INPUT_SIZE}, 임계값: sum>${THRESH_SUM}, margin>${THRESH_MARGIN}`);
     console.log(`백엔드: ${backend}, 캡처: ${capCfg.backend}, GPIO: ${gpioEnabled ? '사용' : '비활성'}`);
 
-    // 서버가 떠서 /tfjs_model 정적 파일을 제공할 수 있는 상태에서 모델 로딩
+    // 여기서 모델 로드
     await loadModel();
   });
 })();
