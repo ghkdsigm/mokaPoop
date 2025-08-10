@@ -297,40 +297,48 @@ function captureImage(callback) {
     console.log(`사진 경로: ${file}`);
 
     try {
-      // TTY가 아니면(예: PM2/systemd) 이미지 출력 생략
-      if (process.stdout.isTTY) {
+      const isTTY = process.stdout.isTTY === true;
+      if (!isTTY) {
+        console.log('TTY가 아닌 환경입니다. 터미널 이미지 출력은 건너뜁니다.');
+      } else {
+        const termCols = Math.max(20, (process.stdout.columns || 80) - 2);
+
         // 1) terminal-image 시도
         if (terminalImage) {
-          const imageBuffer = fs.readFileSync(file);
-          const termWidth = Math.max(20, (process.stdout.columns || 80) - 2);
-          const rendered = await terminalImage.buffer(imageBuffer, { width: termWidth });
-          console.log(rendered);
+          try {
+            const imageBuffer = fs.readFileSync(file);
+            const rendered = await terminalImage.buffer(imageBuffer, { width: termCols });
+            console.log(rendered);
+          } catch (e1) {
+            console.warn('terminal-image 출력 실패:', e1.message);
+            // 2) chafa 폴백 (절대경로)
+            const chafaPath = '/usr/bin/chafa';
+            fs.access(chafaPath, fs.constants.X_OK, (accErr) => {
+              if (!accErr) {
+                execFile(chafaPath, ['--size', `${termCols}x0`, file], (err2, stdout) => {
+                  if (err2) console.warn('chafa 출력 실패:', err2.message);
+                  else console.log(stdout);
+                });
+              } else {
+                console.log('chafa가 없습니다. 설치: sudo apt install -y chafa');
+              }
+            });
+          }
         } else {
-          // 2) chafa 폴백
-          execFile('which', ['chafa'], (e, out) => {
-            if (!e && out.toString().trim()) {
-              exec(`chafa --size=${(process.stdout.columns || 80)}x0 "${file}"`, (err2, stdout) => {
+          // terminal-image 미설치 → chafa 바로 시도
+          const chafaPath = '/usr/bin/chafa';
+          fs.access(chafaPath, fs.constants.X_OK, (accErr) => {
+            if (!accErr) {
+              execFile(chafaPath, ['--size', `${termCols}x0`, file], (err2, stdout) => {
                 if (err2) console.warn('chafa 출력 실패:', err2.message);
                 else console.log(stdout);
               });
             } else {
-              // 3) catimg 폴백
-              execFile('which', ['catimg'], (e2, out2) => {
-                if (!e2 && out2.toString().trim()) {
-                  const cols = Math.max(20, (process.stdout.columns || 80) - 2);
-                  exec(`catimg -w ${cols} "${file}"`, (err3, stdout) => {
-                    if (err3) console.warn('catimg 출력 실패:', err3.message);
-                    else console.log(stdout);
-                  });
-                } else {
-                  console.log('터미널 이미지 모듈/툴이 없어 경로만 표시합니다. 설치: npm i terminal-image 또는 sudo apt install chafa');
-                }
-              });
+              console.log('terminal-image 모듈 또는 chafa가 없어 경로만 표시합니다.');
+              console.log('설치: npm i terminal-image 또는 sudo apt install -y chafa');
             }
           });
         }
-      } else {
-        console.log('TTY가 아닌 환경입니다(예: PM2/systemd). 터미널 이미지 출력은 생략됩니다.');
       }
     } catch (viewErr) {
       console.warn('터미널 이미지 표시 실패:', viewErr.message);
@@ -339,6 +347,7 @@ function captureImage(callback) {
     broadcast('captureSuccess', { filename: path.basename(file) });
     callback(null, file);
   };
+
 
   if (capCfg.backend === 'libcamera') return captureWithLibcamera(filename, done);
   if (capCfg.backend === 'fswebcam') return captureWithFswebcam(filename, done);
