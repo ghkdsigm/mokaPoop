@@ -80,10 +80,9 @@
   <script>
   window.onload = () => {
     // 1) WebSocket 주소를 현재 페이지 호스트 기반으로
-    const wsUrl =
-      (location.protocol === 'https:' ? 'wss://' : 'ws://') +
-      location.hostname + ':8002';         // server.js에서 WS_PORT=8002
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(
+      (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'
+    );
 
     const output = document.getElementById('output');
     const status = document.getElementById('status');

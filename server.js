@@ -117,7 +117,8 @@ if (gpioEnabled) {
 // ==============================
 const app = express();
 const server = require('http').createServer(app);
-const wss = new WebSocket.Server({ port: WS_PORT });
+const { Server: WSServer } = require('ws');
+const wss = new WSServer({ server, path: '/ws' }); 
 const connectedClients = new Set();
 
 // CORS: 프론트가 다른 IP/도메인에서 접근 가능하도록 허용
@@ -795,7 +796,7 @@ function getLocalIP() {
   server.listen(PORT, '0.0.0.0', async () => {
     const ip = getLocalIP();
     console.log(`HTTP:  http://${ip}:${PORT}`);
-    console.log(`WebSocket: ws://${ip}:${WS_PORT}`);
+    console.log(`WebSocket: ws://${ip}:${PORT}/ws`);
     console.log(`뷰어:  http://${ip}:${PORT}/viewer`);
     console.log(`입력 크기: ${INPUT_SIZE}x${INPUT_SIZE}, 임계값: sum>${THRESH_SUM}, margin>${THRESH_MARGIN}`);
     console.log(`백엔드: ${backend}, 캡처: ${capCfg.backend}, GPIO: ${gpioEnabled ? '사용' : '비활성'}`);
