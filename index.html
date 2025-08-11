@@ -78,91 +78,85 @@
   </div>
 
   <script>
-    window.onload = () => {
-      const ws = new WebSocket('ws://localhost:8002');
-      const output = document.getElementById('output');
-      const status = document.getElementById('status');
-      const img = document.getElementById('capturedImage');
-      const cleanBtn = document.getElementById('manualCleanButton');
-      const captureBtn = document.getElementById('captureTestButton');
+  window.onload = () => {
+    // 1) WebSocket 주소를 현재 페이지 호스트 기반으로
+    const wsUrl =
+      (location.protocol === 'https:' ? 'wss://' : 'ws://') +
+      location.hostname + ':8002';         // server.js에서 WS_PORT=8002
+    const ws = new WebSocket(wsUrl);
 
-      ws.onopen = () => {
-        status.innerText = '✅ WebSocket 연결됨';
-      };
+    const output = document.getElementById('output');
+    const status = document.getElementById('status');
+    const img = document.getElementById('capturedImage');
+    const cleanBtn = document.getElementById('manualCleanButton');
+    const captureBtn = document.getElementById('captureTestButton');
 
-      ws.onmessage = evt => {
-        const msg = JSON.parse(evt.data);
-
-        switch (msg.type) {
-          case 'sensorUpdate':
-            output.innerText = JSON.stringify(msg.data, null, 2);
-            status.innerText = msg.data.access
-              ? '🟢 상태: IR 감지 - 강아지 접근 중'
-              : '⚪ 상태: IR 미감지 - 강아지 없음';
-            break;
-
-          case 'captureSuccess':
-            status.innerText = `✅ 캡처 완료: ${msg.data.filename}`;
-			//// img.src = `/${msg.data.filename}?t=${Date.now()}`; //라즈베리파이 내에서 사용하려면 이걸로 다시 변경
-            //img.src = `http://192.168.45.111:8001/${msg.data.filename}?t=${Date.now()}`; //프론트 외부용
-            //const imageUrl = `http://192.168.45.111:8001/${msg.data.filename}?t=${Date.now()}`;
-            //img.src = imageUrl;
-
-            img.src = `/captured/${msg.data.filename}?t=${Date.now()}`;
-            
-            // fetch → blob → 파일로 저장
-            fetch(imageUrl)
-              .then(response => {
-                if (!response.ok) {
-                  throw new Error('이미지 요청 실패');
-                }
-                return response.blob();
-              })
-              .then(blob => {
-                const blobUrl = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = blobUrl;
-                a.download = `capture_${Date.now()}.jpg`; // 저장될 파일명
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(blobUrl); // 메모리 해제
-              })
-              .catch(err => {
-                status.innerText = `❌ 이미지 저장 실패: ${err.message}`;
-              });
-            break;
-
-          case 'captureError':
-            status.innerText = `❌ 캡처 에러: ${msg.data.message}`;
-            break;
-
-          default:
-            console.warn('❗ 알 수 없는 메시지 타입:', msg.type);
-        }
-      };
-
-      ws.onclose = () => {
-        status.innerText = '❌ WebSocket 연결 종료';
-      };
-
-      cleanBtn.onclick = () => {
-        ws.send(JSON.stringify({ type: 'manualClean', data: { poop: 'y' } }));
-        status.innerText = '▶ 수동 청소 요청 전송됨';
-      };
-
-      captureBtn.onclick = () => {
-        // fetch('http://192.168.45.111:8001/capture')
-        fetch('/capture')
-          .then(res => res.text())
-          .then(() => {
-            status.innerText = '▶ 수동 캡처 요청 전송됨';
-          })
-          .catch(err => {
-            status.innerText = `❌ 수동 캡처 요청 실패: ${err.message}`;
-          });
-      };
+    ws.onopen = () => {
+      status.innerText = '✅ WebSocket 연결됨';
     };
-  </script>
+
+    ws.onmessage = evt => {
+      let msg;
+      try { msg = JSON.parse(evt.data); } catch (e) { return; }
+
+      switch (msg.type) {
+        case 'sensorUpdate':
+          output.innerText = JSON.stringify(msg.data, null, 2);
+          status.innerText = msg.data.access
+            ? '🟢 상태: IR 감지 - 강아지 접근 중'
+            : '⚪ 상태: IR 미감지 - 강아지 없음';
+          break;
+
+        case 'captureSuccess': {
+          // 2) 파일명으로 동일 오리진의 /captured에서 이미지 불러오기
+          const file = msg.data.filename;
+          const imageUrl = `${location.origin}/captured/${file}?t=${Date.now()}`;
+          img.src = imageUrl;
+          status.innerText = `✅ 캡처 완료: ${file}`;
+
+          // (선택) 저장까지 하고 싶으면 이 블록 살리면 됨
+          // fetch(imageUrl)
+          //   .then(r => { if(!r.ok) throw new Error('이미지 요청 실패'); return r.blob(); })
+          //   .then(blob => {
+          //     const blobUrl = URL.createObjectURL(blob);
+          //     const a = document.createElement('a');
+          //     a.href = blobUrl;
+          //     a.download = `capture_${Date.now()}.jpg`;
+          //     document.body.appendChild(a);
+          //     a.click();
+          //     document.body.removeChild(a);
+          //     URL.revokeObjectURL(blobUrl);
+          //   })
+          //   .catch(err => { status.innerText = `❌ 이미지 저장 실패: ${err.message}`; });
+          break;
+        }
+
+        case 'captureError':
+          status.innerText = `❌ 캡처 에러: ${msg.data.message}`;
+          break;
+
+        default:
+          console.warn('❗ 알 수 없는 메시지 타입:', msg.type);
+      }
+    };
+
+    ws.onclose = () => {
+      status.innerText = '❌ WebSocket 연결 종료';
+    };
+
+    cleanBtn.onclick = () => {
+      ws.send(JSON.stringify({ type: 'manualClean', data: { poop: 'y' } }));
+      status.innerText = '▶ 수동 청소 요청 전송됨';
+    };
+
+    captureBtn.onclick = () => {
+      // 3) 같은 오리진의 REST 사용
+      fetch('/capture')
+        .then(res => res.text())
+        .then(() => { status.innerText = '▶ 수동 캡처 요청 전송됨'; })
+        .catch(err => { status.innerText = `❌ 수동 캡처 요청 실패: ${err.message}`; });
+    };
+  };
+</script>
 </body>
 </html>
