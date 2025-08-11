@@ -1,6 +1,23 @@
 // server.js
+//
+// 라즈베리파이에 백엔드(이미지 캡처/서빙)를 띄우고,
+// 프론트(다른 PC 브라우저 포함)에서 라즈베리파이 IP:PORT로 접근할 수 있도록
+// - CAPTURE_DIR 고정 저장/서빙
+// - CORS(*) 허용
+// - /captured 정적 서빙
+// - /last-photo.jpg 최신 샷 서빙
+// 를 모두 포함한 전체 코드입니다.
+//
+// 프론트에서 접근할 땐 "http://<라즈베리파이IP>:<PORT>"를 사용하세요.
+// 예) API_BASE = 'http://192.168.0.45:8081'
+//
+// 실행 예:
+// sudo -E env PORT=8081 MODEL_DIR=/home/rehobotrvm/mokaPoop/tfjs_model node server.js
+//
 
-// 필수 모듈 불러오기
+// ==============================
+// 필수 모듈
+// ==============================
 const express = require('express');
 const path = require('path');
 const bodyParser = require('body-parser');
@@ -11,10 +28,11 @@ const os = require('os');
 const { execFile } = require('child_process');
 const jpeg = require('jpeg-js');
 
-// 선택 모듈
+// 선택 모듈 (없어도 동작)
 let NodeWebcam = null;
 try { NodeWebcam = require('node-webcam'); } catch (e) { /* optional */ }
 
+// GPIO (없으면 DRYRUN)
 let pigpioAvailable = true;
 let Gpio = null;
 try { ({ Gpio } = require('pigpio')); } catch (e) { pigpioAvailable = false; }
@@ -27,11 +45,11 @@ const WS_PORT = Number(process.env.WS_PORT || 8002);
 const INPUT_SIZE = Number(process.env.INPUT_SIZE || 224);
 const CLASSES = ['poop', 'urine', 'none'];
 
-// 임계값은 현장 로그로 조정
+// 임계값(필드 로그로 튜닝)
 const THRESH_SUM = Number(process.env.THRESH_SUM || 0.85);
 const THRESH_MARGIN = Number(process.env.THRESH_MARGIN || 0.15);
 
-// 캡처 및 추론 제어
+// 캡처/추론 제어
 const MIN_CAPTURE_INTERVAL = Number(process.env.MIN_CAPTURE_INTERVAL || 3000);
 let lastCaptureTime = 0;
 let isInferenceRunning = false;
@@ -77,13 +95,22 @@ async function loadTF() {
 }
 
 // ==============================
-// 하드웨어 설정
+// 하드웨어 설정 (권한 문제시 DRYRUN)
 // ==============================
 const isLinux = os.platform() === 'linux';
-const gpioEnabled = isLinux && pigpioAvailable;
+let gpioEnabled = isLinux && pigpioAvailable;
+let IR = null;
+let servo = null;
 
-const IR = gpioEnabled ? new Gpio(23, { mode: Gpio.INPUT, pullUpDown: Gpio.PUD_DOWN, alert: true }) : null;
-const servo = gpioEnabled ? new Gpio(18, { mode: Gpio.OUTPUT }) : null;
+if (gpioEnabled) {
+  try {
+    IR = new Gpio(23, { mode: Gpio.INPUT, pullUpDown: Gpio.PUD_DOWN, alert: true });
+    servo = new Gpio(18, { mode: Gpio.OUTPUT });
+  } catch (e) {
+    console.warn('[GPIO] 초기화 실패:', e.message, '→ GPIO 비활성(DRYRUN)');
+    gpioEnabled = false;
+  }
+}
 
 // ==============================
 // 서버 및 통신
@@ -93,12 +120,27 @@ const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ port: WS_PORT });
 const connectedClients = new Set();
 
+// CORS: 프론트가 다른 IP/도메인에서 접근 가능하도록 허용
+app.use(cors({ origin: '*'}));
+
+// 정적 서빙: 모델 폴더
 app.use('/tfjs_model', express.static(MODEL_DIR));
+// 정적 서빙: 프로젝트 루트
 app.use(express.static(path.join(__dirname), {
   setHeaders: (res) => { res.setHeader('Access-Control-Allow-Origin', '*'); }
 }));
-app.use(cors());
 app.use(bodyParser.json());
+
+// ==============================
+// (핵심) 캡처 저장/서빙 폴더 고정
+// ==============================
+const CAPTURE_DIR = path.join(__dirname, 'captures');
+if (!fs.existsSync(CAPTURE_DIR)) fs.mkdirSync(CAPTURE_DIR, { recursive: true });
+
+// 정적 서빙: 캡처된 이미지 전체 접근 (/captured/파일명.jpg)
+app.use('/captured', express.static(CAPTURE_DIR, {
+  setHeaders: (res) => { res.setHeader('Access-Control-Allow-Origin', '*'); },
+}));
 
 // 상태 변수
 let sensorData = { temperature: 0, humidity: 0, access: false, poop: 'n', time: '' };
@@ -115,14 +157,8 @@ let cleaningStartedAt = 0;
 let inferenceCount = 0;
 let totalInferenceTime = 0;
 
-// 마지막 캡처 파일 경로
+// 마지막 캡처 파일 경로(절대경로)
 let lastPhotoPath = null;
-
-// ==============================
-// (핵심 패치) 캡처 저장/서빙 고정 폴더
-// ==============================
-const CAPTURE_DIR = path.join(__dirname, 'captures');
-if (!fs.existsSync(CAPTURE_DIR)) fs.mkdirSync(CAPTURE_DIR, { recursive: true });
 
 // ==============================
 // 캡처 백엔드 탐색
@@ -147,8 +183,8 @@ function checkBinary(bin) {
 
 let webcam;
 async function initCapture() {
-  const hasRpiCam = await checkBinary('rpicam-jpeg');
-  const hasLibcamera = await checkBinary('libcamera-jpeg');
+  const hasRpiCam = await checkBinary('rpicam-jpeg');     // Bookworm 권장
+  const hasLibcamera = await checkBinary('libcamera-jpeg'); // 구 명령 지원
   const hasFswebcam = await checkBinary('fswebcam');
 
   if (hasRpiCam) {
@@ -237,20 +273,16 @@ async function loadModel() {
   try {
     await loadTF(); // backend 세팅
 
-    // 백엔드별 모델 경로
     const isNode = backend === 'tfjs-node';
     const modelUrl = isNode
       ? 'file://' + path.join(MODEL_DIR, 'model.json')
       : `http://127.0.0.1:${PORT}/tfjs_model/model.json`;
 
-    // 디버그: 실제 존재 여부 출력
     const filePath = path.join(MODEL_DIR, 'model.json');
     console.log('[MODEL] backend=', backend);
     console.log('[MODEL] MODEL_DIR=', MODEL_DIR);
     console.log('[MODEL] file exists(model.json)=', fs.existsSync(filePath));
-    try {
-      console.log('[MODEL] dir list=', fs.readdirSync(MODEL_DIR));
-    } catch (_) {}
+    try { console.log('[MODEL] dir list=', fs.readdirSync(MODEL_DIR)); } catch (_) {}
 
     console.log('모델 로딩 중...', modelUrl);
     const t0 = Date.now();
@@ -284,7 +316,7 @@ function captureWithRpiCam(filename, cb) {
   args.push('-o', filename);
   execFile('rpicam-jpeg', args, (err, stdout, stderr) => {
     if (err) console.error('[rpicam-jpeg] ERR:', err.message);
-    if (stderr) console.error('[rpicam-jpeg] STDERR:', stderr.toString().trim());
+    if (stderr) console.error('[rpicam-jpeg] STDERR:', String(stderr).trim());
     cb(err, filename);
   });
 }
@@ -299,7 +331,7 @@ function captureWithLibcamera(filename, cb) {
   ];
   execFile('libcamera-jpeg', args, (err, stdout, stderr) => {
     if (err) console.error('[libcamera-jpeg] ERR:', err.message);
-    if (stderr) console.error('[libcamera-jpeg] STDERR:', stderr.toString().trim());
+    if (stderr) console.error('[libcamera-jpeg] STDERR:', String(stderr).trim());
     cb(err, filename);
   });
 }
@@ -314,20 +346,18 @@ function captureWithFswebcam(filename, cb) {
   ];
   execFile('fswebcam', args, (err, stdout, stderr) => {
     if (err) console.error('[fswebcam] ERR:', err.message);
-    if (stderr) console.error('[fswebcam] STDERR:', stderr.toString().trim());
+    if (stderr) console.error('[fswebcam] STDERR:', String(stderr).trim());
     cb(err, filename);
   });
 }
 
-// (핵심 패치) node-webcam 저장 경로/파일명 CAPTURE_DIR로 고정
+// node-webcam 저장 경로/파일명 CAPTURE_DIR로 고정
 function captureWithNodeWebcam(filename, cb) {
   if (!webcam) return cb(new Error('node-webcam 미초기화'));
-  const targetNoExt = path.join(CAPTURE_DIR, path.basename(filename, '.jpg'));
+  const targetNoExt = path.join(CAPTURE_DIR, path.basename(filename, '.jpg')); // 확장자 없이 넘김
   webcam.capture(targetNoExt, (err, savedPath) => {
     if (err) return cb(err);
-    const absPath = path.isAbsolute(savedPath)
-      ? savedPath
-      : path.join(process.cwd(), savedPath);
+    const absPath = path.isAbsolute(savedPath) ? savedPath : path.join(process.cwd(), savedPath);
     cb(null, absPath);
   });
 }
@@ -601,7 +631,9 @@ app.get('/capture', (req, res) => {
     res.json({
       imagePath: path.basename(imagePath),
       detectedPoop,
-      inferenceTimeMs: inferenceCount > 0 ? Math.round(totalInferenceTime / inferenceCount) : 0
+      inferenceTimeMs: inferenceCount > 0 ? Math.round(totalInferenceTime / inferenceCount) : 0,
+      // 프론트에서 절대URL이 필요할 때 사용하도록 절대경로도 전달
+      absoluteUrl: `${req.protocol}://${req.headers.host}/captured/${path.basename(imagePath)}`
     });
   });
 });
@@ -617,7 +649,7 @@ app.get('/api/performance', (req, res) => {
   });
 });
 
-// (디버그) 현재 저장 경로 상태 확인
+// 디버그: 현재 저장 경로 상태 확인
 app.get('/debug', (req, res) => {
   res.json({
     lastPhotoPath,
@@ -628,7 +660,7 @@ app.get('/debug', (req, res) => {
   });
 });
 
-// 마지막 캡처 이미지 바이너리 서빙
+// 최신 샷 바이너리 서빙 (뷰어나 레거시 클라이언트용)
 app.get('/last-photo.jpg', (req, res) => {
   try {
     if (!lastPhotoPath || !fs.existsSync(lastPhotoPath)) {
@@ -641,7 +673,7 @@ app.get('/last-photo.jpg', (req, res) => {
   }
 });
 
-// 간단 뷰어 페이지
+// 간단 뷰어 페이지 (라즈베리파이 IP로 접속)
 app.get('/viewer', (req, res) => {
   const html = `<!doctype html>
 <html lang="ko">
@@ -658,6 +690,7 @@ app.get('/viewer', (req, res) => {
   button:disabled { opacity: .6; cursor: default; }
   img { width: 100%; height: auto; background: #111; border-radius: 12px; }
   .meta { font-size: 12px; color: #bbb; }
+  .url { font-size: 12px; color: #8ab4ff; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -667,14 +700,16 @@ app.get('/viewer', (req, res) => {
       <span class="meta" id="meta">대기중</span>
     </div>
     <img id="img" src="/last-photo.jpg" alt="last-capture" />
+    <div class="url" id="abs"></div>
   </div>
 
 <script>
   const img = document.getElementById('img');
   const meta = document.getElementById('meta');
   const btn = document.getElementById('btn');
+  const abs = document.getElementById('abs');
 
-  function refreshImage() {
+  async function refreshImage() {
     const url = '/last-photo.jpg?v=' + Date.now();
     img.src = url;
     meta.textContent = new Date().toLocaleString() + ' 업데이트';
@@ -688,9 +723,10 @@ app.get('/viewer', (req, res) => {
     try {
       const r = await fetch('/capture');
       if (!r.ok) throw new Error('capture failed');
-      await r.json();
+      const js = await r.json();
       refreshImage();
       meta.textContent = '캡처 완료';
+      if (js.absoluteUrl) abs.textContent = '절대 URL: ' + js.absoluteUrl;
     } catch (e) {
       meta.textContent = '캡처 실패';
     } finally {
@@ -706,6 +742,7 @@ app.get('/viewer', (req, res) => {
   res.send(html);
 });
 
+// 설정 변경
 app.post('/api/config', (req, res) => {
   const { testInterval: newInterval } = req.body;
   if (newInterval && newInterval >= 3000) {
