@@ -6,7 +6,7 @@
 // - CORS(*) 허용
 // - /captured 정적 서빙
 // - /last-photo.jpg 최신 샷 서빙
-// 를 모두 포함한 전체 코드입니다.
+// - [추가] 전역 캐시 방지 미들웨어(no-store 등), 정적 서빙 캐시 차단, 루트→/viewer 리다이렉트
 //
 // 프론트에서 접근할 땐 "http://<라즈베리파이IP>:<PORT>"를 사용하세요.
 // 예) API_BASE = 'http://192.168.45.133:8081'
@@ -117,19 +117,45 @@ if (gpioEnabled) {
 // ==============================
 const app = express();
 const server = require('http').createServer(app);
-const { Server: WSServer } = require('ws');
-const wss = new WSServer({ server, path: '/ws' }); 
+const wss = new WebSocket.Server({ port: WS_PORT });
 const connectedClients = new Set();
+
+// ==== [캐시 방지 전역 미들웨어] ====
+// HTML/JS/CSS/JSON 등 모든 응답에 no-store 강제
+app.disable('etag'); // ETag 제거
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
 
 // CORS: 프론트가 다른 IP/도메인에서 접근 가능하도록 허용
 app.use(cors({ origin: '*'}));
 
-// 정적 서빙: 모델 폴더
-app.use('/tfjs_model', express.static(MODEL_DIR));
-// 정적 서빙: 프로젝트 루트
-app.use(express.static(path.join(__dirname), {
-  setHeaders: (res) => { res.setHeader('Access-Control-Allow-Origin', '*'); }
+// 정적 서빙: 모델 폴더 (캐시 차단)
+app.use('/tfjs_model', express.static(MODEL_DIR, {
+  etag: false,
+  lastModified: false,
+  maxAge: 0,
+  setHeaders: (res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-store');
+  }
 }));
+
+// 정적 서빙: 프로젝트 루트 (캐시 차단)
+app.use(express.static(path.join(__dirname), {
+  etag: false,
+  lastModified: false,
+  maxAge: 0,
+  setHeaders: (res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-store');
+  }
+}));
+
 app.use(bodyParser.json());
 
 // ==============================
@@ -138,9 +164,15 @@ app.use(bodyParser.json());
 const CAPTURE_DIR = path.join(__dirname, 'captures');
 if (!fs.existsSync(CAPTURE_DIR)) fs.mkdirSync(CAPTURE_DIR, { recursive: true });
 
-// 정적 서빙: 캡처된 이미지 전체 접근 (/captured/파일명.jpg)
+// 정적 서빙: 캡처된 이미지 전체 접근 (/captured/파일명.jpg) - 캐시 차단
 app.use('/captured', express.static(CAPTURE_DIR, {
-  setHeaders: (res) => { res.setHeader('Access-Control-Allow-Origin', '*'); },
+  etag: false,
+  lastModified: false,
+  maxAge: 0,
+  setHeaders: (res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-store');
+  }
 }));
 
 // 상태 변수
@@ -624,6 +656,9 @@ app.get('/health', (req, res) => {
 
 app.get('/api/sensor', (req, res) => res.json(sensorData));
 
+// 루트로 접근하면 /viewer로 리다이렉트 (옛 index.html 혼선 방지)
+app.get('/', (req, res) => res.redirect('/viewer'));
+
 app.get('/capture', (req, res) => {
   if (isInferenceRunning) return res.status(429).json({ error: '추론 실행 중' });
   captureImage(async (err, imagePath) => {
@@ -665,6 +700,7 @@ app.get('/debug', (req, res) => {
 app.get('/last-photo.jpg', (req, res) => {
   try {
     if (!lastPhotoPath || !fs.existsSync(lastPhotoPath)) {
+    res.setHeader('Cache-Control', 'no-store');
       return res.status(404).send('no photo yet');
     }
     res.setHeader('Cache-Control', 'no-store');
@@ -711,9 +747,9 @@ app.get('/viewer', (req, res) => {
   const abs = document.getElementById('abs');
 
   function refreshImage() {
-  img.src = '/last-photo.jpg?v=' + Date.now(); // 캐시 방지
-  meta.textContent = new Date().toLocaleString() + ' 업데이트';
-}
+    img.src = '/last-photo.jpg?v=' + Date.now(); // 캐시 방지
+    meta.textContent = new Date().toLocaleString() + ' 업데이트';
+  }
 
   // 5초마다 최신 샷 표시
   setInterval(refreshImage, 5000);
@@ -796,7 +832,7 @@ function getLocalIP() {
   server.listen(PORT, '0.0.0.0', async () => {
     const ip = getLocalIP();
     console.log(`HTTP:  http://${ip}:${PORT}`);
-    console.log(`WebSocket: ws://${ip}:${PORT}/ws`);
+    console.log(`WebSocket: ws://${ip}:${WS_PORT}`);
     console.log(`뷰어:  http://${ip}:${PORT}/viewer`);
     console.log(`입력 크기: ${INPUT_SIZE}x${INPUT_SIZE}, 임계값: sum>${THRESH_SUM}, margin>${THRESH_MARGIN}`);
     console.log(`백엔드: ${backend}, 캡처: ${capCfg.backend}, GPIO: ${gpioEnabled ? '사용' : '비활성'}`);
