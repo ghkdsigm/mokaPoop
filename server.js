@@ -1,4 +1,5 @@
 // server.js
+
 // 필수 모듈 불러오기
 const express = require('express');
 const path = require('path');
@@ -300,9 +301,19 @@ function captureWithFswebcam(filename, cb) {
   execFile('fswebcam', args, (err) => cb(err, filename));
 }
 
+// >>> 핵심 패치: node-webcam 저장 경로/파일명 정확히 잡기 <<<
 function captureWithNodeWebcam(filename, cb) {
   if (!webcam) return cb(new Error('node-webcam 미초기화'));
-  webcam.capture(path.basename(filename, '.jpg'), (err) => cb(err, filename));
+  // node-webcam은 callbackReturn: 'location'일 때 실제 저장 경로를 콜백의 두 번째 인자로 준다.
+  // 확장자 없이 넘기는 것이 안전(모듈이 자체적으로 .jpg 붙임)
+  const targetNoExt = filename.replace(/\.jpg$/i, '');
+  webcam.capture(targetNoExt, (err, savedPath) => {
+    if (err) return cb(err);
+    const absPath = path.isAbsolute(savedPath)
+      ? savedPath
+      : path.join(process.cwd(), savedPath);
+    cb(null, absPath);
+  });
 }
 
 function captureImage(callback) {
@@ -329,6 +340,7 @@ function captureImage(callback) {
     if (err) return callback(err);
     console.log(`캡처 완료: ${Date.now() - t0}ms`);
     lastPhotoPath = file;
+    console.log('[CAPTURE] saved file =', lastPhotoPath, 'exists=', fs.existsSync(lastPhotoPath)); // 존재여부 로그
     broadcast('captureSuccess', { filename: path.basename(file) });
     callback(null, file);
   };
