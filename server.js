@@ -9,7 +9,7 @@
 // 를 모두 포함한 전체 코드입니다.
 //
 // 프론트에서 접근할 땐 "http://<라즈베리파이IP>:<PORT>"를 사용하세요.
-// 예) API_BASE = 'http://192.168.0.45:8081'
+// 예) API_BASE = 'http://192.168.45.133:8081'
 //
 // 실행 예:
 // sudo -E env PORT=8081 MODEL_DIR=/home/rehobotrvm/mokaPoop/tfjs_model node server.js
@@ -709,14 +709,15 @@ app.get('/viewer', (req, res) => {
   const btn = document.getElementById('btn');
   const abs = document.getElementById('abs');
 
-  async function refreshImage() {
-    const url = '/last-photo.jpg?v=' + Date.now();
-    img.src = url;
+  function refreshImage() {
+    img.src = '/last-photo.jpg?v=' + Date.now();
     meta.textContent = new Date().toLocaleString() + ' 업데이트';
   }
 
+  // 5초마다 최신 샷 표시
   setInterval(refreshImage, 5000);
 
+  // 캡처 버튼 → 서버에서 캡처 수행 후 이미지 갱신
   btn.addEventListener('click', async () => {
     btn.disabled = true;
     meta.textContent = '캡처 중...';
