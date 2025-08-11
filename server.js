@@ -674,89 +674,74 @@ app.get('/last-photo.jpg', (req, res) => {
 });
 
 // 간단 뷰어 페이지 (라즈베리파이 IP로 접속)
-// 간단 뷰어 페이지 (라즈베리파이 IP로 접속)
 app.get('/viewer', (req, res) => {
-  const html = '<!doctype html>\
-<html lang="ko">\
-<head>\
-<meta charset="utf-8" />\
-<meta name="viewport" content="width=device-width,initial-scale=1" />\
-<title>Last Capture Viewer</title>\
-<style>\
-  :root { color-scheme: dark; }\
-  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 16px; background: #0b0b0b; color: #fafafa; }\
-  .wrap { max-width: 960px; margin: 0 auto; }\
-  .row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }\
-  button { padding: 10px 14px; font-size: 14px; border-radius: 10px; border: 0; background: #2b72ff; color: #fff; cursor: pointer; }\
-  button:disabled { opacity: .6; cursor: default; }\
-  img { width: 100%; height: auto; background: #111; border-radius: 12px; }\
-  .meta { font-size: 12px; color: #bbb; }\
-  .url { font-size: 12px; color: #8ab4ff; word-break: break-all; }\
-  .err { color:#ff8484; font-size:12px; }\
-</style>\
-</head>\
-<body>\
-  <div class="wrap">\
-    <div class="row">\
-      <button id="btn">캡처 실행</button>\
-      <span class="meta" id="meta">대기중</span>\
-    </div>\
-    <img id="img" src="/last-photo.jpg" alt="last-capture" />\
-    <div class="url" id="abs"></div>\
-    <div class="err" id="err"></div>\
-  </div>\
-\
-<script>\
-  var img  = document.getElementById("img");\
-  var meta = document.getElementById("meta");\
-  var btn  = document.getElementById("btn");\
-  var abs  = document.getElementById("abs");\
-  var errBox = document.getElementById("err");\
-\
-  function refreshImage() {\
-    // 캐시 방지 쿼리 붙이기\
-    img.src = "/last-photo.jpg?v=" + Date.now();\
-    meta.textContent = new Date().toLocaleString() + " 업데이트";\
-    errBox.textContent = "";\
-  }\
-\
-  // 이미지 로드 실패시 2초 후 자동 재시도\
-  img.onerror = function(){\
-    errBox.textContent = "이미지 로드 실패. 재시도 중...";\
-    setTimeout(refreshImage, 2000);\
-  };\
-\
-  // 5초마다 최신 샷 표시\
-  setInterval(refreshImage, 5000);\
-\
-  // 캡처 버튼 → 서버에서 캡처 수행 후 이미지 갱신\
-  btn.addEventListener("click", function() {\
-    btn.disabled = true;\
-    meta.textContent = "캡처 중...";\
-    errBox.textContent = "";\
-    fetch("/capture").then(function(r){\
-      if(!r.ok) throw new Error("capture failed");\
-      return r.json();\
-    }).then(function(js){\
-      refreshImage();\
-      meta.textContent = "캡처 완료";\
-      if (js.absoluteUrl) abs.textContent = "절대 URL: " + js.absoluteUrl; \
-    }).catch(function(e){\
-      meta.textContent = "캡처 실패";\
-      errBox.textContent = e && e.message ? e.message : "알 수 없는 오류";\
-    }).finally(function(){\
-      setTimeout(function(){ btn.disabled = false; }, 800);\
-    });\
-  });\
-\
-  refreshImage();\
-</script>\
-</body>\
-</html>';
+  const html = `<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Last Capture Viewer</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 16px; background: #0b0b0b; color: #fafafa; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  .row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+  button { padding: 10px 14px; font-size: 14px; border-radius: 10px; border: 0; background: #2b72ff; color: #fff; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: default; }
+  img { width: 100%; height: auto; background: #111; border-radius: 12px; }
+  .meta { font-size: 12px; color: #bbb; }
+  .url { font-size: 12px; color: #8ab4ff; word-break: break-all; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row">
+      <button id="btn">캡처 실행</button>
+      <span class="meta" id="meta">대기중</span>
+    </div>
+    <img id="img" src="/last-photo.jpg" alt="last-capture" />
+    <div class="url" id="abs"></div>
+  </div>
+
+<script>
+  const img = document.getElementById('img');
+  const meta = document.getElementById('meta');
+  const btn = document.getElementById('btn');
+  const abs = document.getElementById('abs');
+
+  function refreshImage() {
+  img.src = '/last-photo.jpg?v=' + Date.now(); // 캐시 방지
+  meta.textContent = new Date().toLocaleString() + ' 업데이트';
+}
+
+  // 5초마다 최신 샷 표시
+  setInterval(refreshImage, 5000);
+
+  // 캡처 버튼 → 서버에서 캡처 수행 후 이미지 갱신
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    meta.textContent = '캡처 중...';
+    try {
+      const r = await fetch('/capture');
+      if (!r.ok) throw new Error('capture failed');
+      const js = await r.json();
+      refreshImage();
+      meta.textContent = '캡처 완료';
+      if (js.absoluteUrl) abs.textContent = '절대 URL: ' + js.absoluteUrl;
+    } catch (e) {
+      meta.textContent = '캡처 실패';
+    } finally {
+      setTimeout(() => { btn.disabled = false; }, 800);
+    }
+  });
+
+  refreshImage();
+</script>
+</body>
+</html>`;
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });
-
 
 // 설정 변경
 app.post('/api/config', (req, res) => {
