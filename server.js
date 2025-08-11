@@ -119,6 +119,12 @@ let totalInferenceTime = 0;
 let lastPhotoPath = null;
 
 // ==============================
+// (핵심 패치) 캡처 저장/서빙 고정 폴더
+// ==============================
+const CAPTURE_DIR = path.join(__dirname, 'captures');
+if (!fs.existsSync(CAPTURE_DIR)) fs.mkdirSync(CAPTURE_DIR, { recursive: true });
+
+// ==============================
 // 캡처 백엔드 탐색
 // ==============================
 const capCfg = {
@@ -276,7 +282,11 @@ function captureWithRpiCam(filename, cb) {
   args.push('--quality', String(capCfg.quality));
   args.push('-t', '1000');
   args.push('-o', filename);
-  execFile('rpicam-jpeg', args, (err) => cb(err, filename));
+  execFile('rpicam-jpeg', args, (err, stdout, stderr) => {
+    if (err) console.error('[rpicam-jpeg] ERR:', err.message);
+    if (stderr) console.error('[rpicam-jpeg] STDERR:', stderr.toString().trim());
+    cb(err, filename);
+  });
 }
 
 function captureWithLibcamera(filename, cb) {
@@ -287,7 +297,11 @@ function captureWithLibcamera(filename, cb) {
     '--quality', String(capCfg.quality),
     '--timeout', '1000'
   ];
-  execFile('libcamera-jpeg', args, (err) => cb(err, filename));
+  execFile('libcamera-jpeg', args, (err, stdout, stderr) => {
+    if (err) console.error('[libcamera-jpeg] ERR:', err.message);
+    if (stderr) console.error('[libcamera-jpeg] STDERR:', stderr.toString().trim());
+    cb(err, filename);
+  });
 }
 
 function captureWithFswebcam(filename, cb) {
@@ -298,15 +312,17 @@ function captureWithFswebcam(filename, cb) {
     '--jpeg', String(capCfg.quality),
     filename
   ];
-  execFile('fswebcam', args, (err) => cb(err, filename));
+  execFile('fswebcam', args, (err, stdout, stderr) => {
+    if (err) console.error('[fswebcam] ERR:', err.message);
+    if (stderr) console.error('[fswebcam] STDERR:', stderr.toString().trim());
+    cb(err, filename);
+  });
 }
 
-// >>> 핵심 패치: node-webcam 저장 경로/파일명 정확히 잡기 <<<
+// (핵심 패치) node-webcam 저장 경로/파일명 CAPTURE_DIR로 고정
 function captureWithNodeWebcam(filename, cb) {
   if (!webcam) return cb(new Error('node-webcam 미초기화'));
-  // node-webcam은 callbackReturn: 'location'일 때 실제 저장 경로를 콜백의 두 번째 인자로 준다.
-  // 확장자 없이 넘기는 것이 안전(모듈이 자체적으로 .jpg 붙임)
-  const targetNoExt = filename.replace(/\.jpg$/i, '');
+  const targetNoExt = path.join(CAPTURE_DIR, path.basename(filename, '.jpg'));
   webcam.capture(targetNoExt, (err, savedPath) => {
     if (err) return cb(err);
     const absPath = path.isAbsolute(savedPath)
@@ -324,23 +340,23 @@ function captureImage(callback) {
   lastCaptureTime = now;
 
   try {
-    for (const file of fs.readdirSync(__dirname)) {
+    for (const file of fs.readdirSync(CAPTURE_DIR)) {
       if (file.startsWith('photo_') && file.endsWith('.jpg')) {
-        fs.unlinkSync(path.join(__dirname, file));
+        fs.unlinkSync(path.join(CAPTURE_DIR, file));
       }
     }
   } catch (e) {
     console.warn('이전 캡처 파일 정리 스킵:', e.message);
   }
 
-  const filename = path.join(__dirname, `photo_${Date.now()}.jpg`);
+  const filename = path.join(CAPTURE_DIR, `photo_${Date.now()}.jpg`);
   const t0 = Date.now();
 
   const done = (err, file) => {
     if (err) return callback(err);
     console.log(`캡처 완료: ${Date.now() - t0}ms`);
     lastPhotoPath = file;
-    console.log('[CAPTURE] saved file =', lastPhotoPath, 'exists=', fs.existsSync(lastPhotoPath)); // 존재여부 로그
+    console.log('[CAPTURE] saved file =', lastPhotoPath, 'exists=', fs.existsSync(lastPhotoPath));
     broadcast('captureSuccess', { filename: path.basename(file) });
     callback(null, file);
   };
@@ -598,6 +614,17 @@ app.get('/api/performance', (req, res) => {
     memoryInfo: tf && tf.memory ? tf.memory() : null,
     isInferenceRunning,
     backend
+  });
+});
+
+// (디버그) 현재 저장 경로 상태 확인
+app.get('/debug', (req, res) => {
+  res.json({
+    lastPhotoPath,
+    exists: lastPhotoPath ? fs.existsSync(lastPhotoPath) : false,
+    captureDir: CAPTURE_DIR,
+    port: PORT,
+    captureBackend: capCfg.backend
   });
 });
 
