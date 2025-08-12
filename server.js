@@ -116,6 +116,10 @@ if (gpioEnabled) {
 // 서버 및 통신
 // ==============================
 const app = express();
+app.use((req, res, next) => {
+  console.log('[HTTP]', req.method, req.headers.host, req.originalUrl, 'Ref:', req.headers.referer || '');
+  next();
+}); 
 const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ port: WS_PORT });
 const connectedClients = new Set();
